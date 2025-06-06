@@ -34,8 +34,8 @@ func ExampleBCD_basic() {
 	// b = 67.89
 	// a + b = 191.34
 	// a - b = 55.56
-	// a * b = 8381.2305
-	// a / b = 1.8178
+	// a * b = 8381.0205
+	// a / b = 1.8184
 }
 
 // ExampleBCD_precision demonstrates how BCD maintains exact decimal precision.
@@ -161,7 +161,7 @@ func ExampleCurrency_allocation() {
 	//   Person 1: $33.34
 	//   Person 2: $33.33
 	//   Person 3: $33.33
-	//   Total: $100.00 (no pennies lost!)
+	//   Total: $100 (no pennies lost!)
 	// 
 	// Splitting $2000 rent by room size:
 	//   Room 1 (100 sq ft): $400.00
@@ -256,7 +256,7 @@ func ExampleBCD_rounding() {
 	}
 
 	// Output:
-	// Rounding 1.2350 to 2 decimal places:
+	// Rounding 1.235 to 2 decimal places:
 	//   RoundUp        : 1.24
 	//   RoundDown      : 1.23
 	//   RoundHalfUp    : 1.24
@@ -348,15 +348,15 @@ func ExampleCurrency_invoice() {
 	// Output:
 	// Invoice:
 	// --------------------------------------------------
-	// Widget Pro           5 x   $49.99 =  $249.95
-	// Gadget Plus          2 x  $129.95 =  $259.90
-	// Service Fee          1 x   $25.00 =   $25.00
+	// Widget Pro            5 x   $49.99 =  $249.95
+	// Gadget Plus           2 x  $129.95 =  $259.90
+	// Service Fee           1 x   $25.00 =   $25.00
 	// --------------------------------------------------
-	// Subtotal:                           $534.85
-	// Discount (10%):                     -$53.49
-	// Tax (8.25%):                         $39.71
+	// Subtotal:                            $534.85
+	// Discount (10%):                      -$53.48
+	// Tax (8.25%):                          $39.71
 	// ==================================================
-	// Total:                              $521.07
+	// Total:                               $521.08
 }
 
 // Helper functions for examples

@@ -172,13 +172,51 @@ func ParseCurrency(s string) (*Currency, error) {
 		}
 	}
 
-	// If no code found, check for symbols
+	// If no code found, check for symbols - prioritize unique symbols
 	if code == "" {
-		for currCode, info := range currencyData {
-			if info.Symbol != "" && strings.Contains(s, info.Symbol) {
+		// First pass: look for unique symbols
+		uniqueSymbols := map[string]string{
+			"€": "EUR", "£": "GBP", "₹": "INR", "₩": "KRW",
+			"R$": "BRL", "₽": "RUB", "zł": "PLN", "฿": "THB", "₪": "ILS",
+			"₱": "PHP", "Kč": "CZK", "Ft": "HUF", "₫": "VND", "₺": "TRY",
+			"₿": "BTC", "Ξ": "ETH",
+		}
+		
+		for symbol, currCode := range uniqueSymbols {
+			if strings.Contains(s, symbol) {
 				code = currCode
-				amountStr = strings.Replace(s, info.Symbol, "", 1)
+				amountStr = strings.Replace(s, symbol, "", 1)
 				break
+			}
+		}
+		
+		// Second pass: check for ¥ which could be JPY or CNY
+		if code == "" && strings.Contains(s, "¥") {
+			// Default to JPY for ¥ symbol (more common in international usage)
+			code = "JPY"
+			amountStr = strings.Replace(s, "¥", "", 1)
+		}
+		
+		// Third pass: check for $ which could be multiple currencies
+		if code == "" && strings.Contains(s, "$") {
+			// Default to USD for $ symbol
+			code = "USD"
+			amountStr = strings.Replace(s, "$", "", 1)
+		}
+		
+		// Fourth pass: check for other ambiguous symbols
+		if code == "" {
+			ambiguousSymbols := map[string]string{
+				"kr": "SEK", // Could be SEK, NOK, or DKK - default to SEK
+				"Fr": "CHF",
+			}
+			
+			for symbol, currCode := range ambiguousSymbols {
+				if strings.Contains(s, symbol) {
+					code = currCode
+					amountStr = strings.Replace(s, symbol, "", 1)
+					break
+				}
 			}
 		}
 	}
@@ -198,37 +236,49 @@ func ParseCurrency(s string) (*Currency, error) {
 	}
 
 	// Remove thousands separators
-	// Detect decimal separator (last occurrence of . or ,)
-	lastDot := strings.LastIndex(amountStr, ".")
-	lastComma := strings.LastIndex(amountStr, ",")
-
-	if lastDot > lastComma {
-		// Period is decimal separator
+	// First, handle special separators like apostrophes (Swiss format)
+	amountStr = strings.ReplaceAll(amountStr, "'", "")
+	
+	// For currencies with no decimal places (like JPY), commas are always thousands separators
+	info, hasInfo := currencyData[code]
+	
+	if hasInfo && info.DecimalPlaces == 0 {
+		// No decimal places - all commas and dots are thousands separators
 		amountStr = strings.ReplaceAll(amountStr, ",", "")
-	} else if lastComma > lastDot {
-		// Comma is decimal separator
 		amountStr = strings.ReplaceAll(amountStr, ".", "")
-		amountStr = strings.Replace(amountStr, ",", ".", 1)
-	} else if lastDot == -1 && lastComma == -1 {
-		// No decimal separator
-	} else if lastDot >= 0 {
-		// Only dots, check if it's a thousands separator
-		parts := strings.Split(amountStr, ".")
-		if len(parts) == 2 && len(parts[1]) != 2 && len(parts[1]) != 3 {
-			// Dot is decimal separator
-		} else if len(parts) > 2 {
-			// Multiple dots, they are thousands separators
-			amountStr = strings.ReplaceAll(amountStr, ".", "")
-		}
 	} else {
-		// Only commas, check if it's a thousands separator
-		parts := strings.Split(amountStr, ",")
-		if len(parts) == 2 && (len(parts[1]) == 2 || len(parts[1]) == 3) {
-			// Comma is decimal separator
-			amountStr = strings.Replace(amountStr, ",", ".", 1)
-		} else {
-			// Comma is thousands separator
+		// Detect decimal separator (last occurrence of . or ,)
+		lastDot := strings.LastIndex(amountStr, ".")
+		lastComma := strings.LastIndex(amountStr, ",")
+
+		if lastDot > lastComma {
+			// Period is decimal separator
 			amountStr = strings.ReplaceAll(amountStr, ",", "")
+		} else if lastComma > lastDot {
+			// Comma is decimal separator
+			amountStr = strings.ReplaceAll(amountStr, ".", "")
+			amountStr = strings.Replace(amountStr, ",", ".", 1)
+		} else if lastDot == -1 && lastComma == -1 {
+			// No decimal separator
+		} else if lastDot >= 0 {
+			// Only dots, check if it's a thousands separator
+			parts := strings.Split(amountStr, ".")
+			if len(parts) == 2 && len(parts[1]) != 2 && len(parts[1]) != 3 {
+				// Dot is decimal separator
+			} else if len(parts) > 2 {
+				// Multiple dots, they are thousands separators
+				amountStr = strings.ReplaceAll(amountStr, ".", "")
+			}
+		} else {
+			// Only commas, check if it's a thousands separator
+			parts := strings.Split(amountStr, ",")
+			if len(parts) == 2 && (len(parts[1]) == 2 || len(parts[1]) == 3) {
+				// Comma is decimal separator
+				amountStr = strings.Replace(amountStr, ",", ".", 1)
+			} else {
+				// Comma is thousands separator
+				amountStr = strings.ReplaceAll(amountStr, ",", "")
+			}
 		}
 	}
 
@@ -274,7 +324,60 @@ func (c *Currency) String() string {
 func (c *Currency) Format(includeSymbol, includeCode bool) string {
 	amountStr := c.amount.String()
 	
-	// Add thousands separators
+	// Split into integer and decimal parts
+	parts := strings.Split(amountStr, ".")
+	integerPart := parts[0]
+	decimalPart := ""
+	if len(parts) > 1 {
+		decimalPart = parts[1]
+	}
+
+	// Handle negative
+	negative := strings.HasPrefix(integerPart, "-")
+	if negative {
+		integerPart = integerPart[1:]
+	}
+
+	// Ensure proper decimal places
+	if c.info.DecimalPlaces > 0 {
+		if decimalPart == "" {
+			decimalPart = strings.Repeat("0", c.info.DecimalPlaces)
+		} else if len(decimalPart) < c.info.DecimalPlaces {
+			decimalPart += strings.Repeat("0", c.info.DecimalPlaces-len(decimalPart))
+		}
+		amountStr = integerPart + "." + decimalPart
+	} else {
+		amountStr = integerPart
+	}
+
+	// Build final string
+	var result strings.Builder
+	
+	if negative {
+		result.WriteString("-")
+	}
+	
+	if includeSymbol && c.info.Symbol != "" {
+		result.WriteString(c.info.Symbol)
+	}
+	
+	result.WriteString(amountStr)
+	
+	if includeCode {
+		if includeSymbol {
+			result.WriteString(" ")
+		}
+		result.WriteString(c.info.Code)
+	}
+
+	return result.String()
+}
+
+// FormatWithSeparators formats the currency with thousands separators.
+func (c *Currency) FormatWithSeparators(includeSymbol, includeCode bool) string {
+	amountStr := c.amount.String()
+	
+	// Split into integer and decimal parts
 	parts := strings.Split(amountStr, ".")
 	integerPart := parts[0]
 	decimalPart := ""
@@ -292,7 +395,10 @@ func (c *Currency) Format(includeSymbol, includeCode bool) string {
 	if len(integerPart) > 3 {
 		var result []string
 		for i := len(integerPart); i > 0; i -= 3 {
-			start := max(i - 3, 0)
+			start := i - 3
+			if start < 0 {
+				start = 0
+			}
 			result = append([]string{integerPart[start:i]}, result...)
 		}
 		integerPart = strings.Join(result, ",")
@@ -453,13 +559,24 @@ func (c *Currency) Allocate(ratios []int) ([]*Currency, error) {
 		return nil, errors.New("sum of ratios must be positive")
 	}
 
-	// Allocate amounts
-	results := make([]*Currency, len(ratios))
-	remaining := c.amount.Copy()
-	remainingRatio := totalRatio
+	// Special case: if all amounts are zero
+	if c.amount.IsZero() {
+		results := make([]*Currency, len(ratios))
+		for i := range results {
+			results[i] = &Currency{
+				amount: Zero(),
+				info:   c.info,
+			}
+		}
+		return results, nil
+	}
 
-	for i := range len(ratios)-1 {
-		if ratios[i] == 0 {
+	// Calculate initial allocations
+	results := make([]*Currency, len(ratios))
+	allocated := Zero()
+	
+	for i, ratio := range ratios {
+		if ratio == 0 {
 			results[i] = &Currency{
 				amount: Zero(),
 				info:   c.info,
@@ -467,33 +584,41 @@ func (c *Currency) Allocate(ratios []int) ([]*Currency, error) {
 			continue
 		}
 
-		// Calculate proportion
-		proportion, err := NewFromInt(int64(ratios[i])).Div(
-			NewFromInt(int64(remainingRatio)),
-			10, // High precision for proportion
-			RoundHalfEven,
-		)
+		// Calculate this allocation: amount * ratio / totalRatio
+		ratioFactor := NewFromInt(int64(ratio))
+		totalFactor := NewFromInt(int64(totalRatio))
+		
+		proportion, err := ratioFactor.Div(totalFactor, 10, RoundHalfEven)
 		if err != nil {
 			return nil, err
 		}
-
-		// Calculate amount for this allocation
-		amount := remaining.Mul(proportion)
-		amount = amount.Round(c.info.DecimalPlaces, RoundDown)
-
+		
+		allocAmount := c.amount.Mul(proportion)
+		allocAmount = allocAmount.Round(c.info.DecimalPlaces, RoundDown)
+		
 		results[i] = &Currency{
-			amount: amount,
+			amount: allocAmount,
 			info:   c.info,
 		}
-
-		remaining = remaining.Sub(amount)
-		remainingRatio -= ratios[i]
+		
+		allocated = allocated.Add(allocAmount)
 	}
 
-	// Last allocation gets the remainder
-	results[len(ratios)-1] = &Currency{
-		amount: remaining,
-		info:   c.info,
+	// Distribute any remainder due to rounding
+	remainder := c.amount.Sub(allocated)
+	
+	// Add remainder to the largest allocation
+	if !remainder.IsZero() {
+		largestIdx := 0
+		largestRatio := ratios[0]
+		for i := 1; i < len(ratios); i++ {
+			if ratios[i] > largestRatio {
+				largestIdx = i
+				largestRatio = ratios[i]
+			}
+		}
+		
+		results[largestIdx].amount = results[largestIdx].amount.Add(remainder)
 	}
 
 	return results, nil
