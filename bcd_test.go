@@ -1,5 +1,9 @@
-// Copyright (c) 2024, Frank Mueller / Tideland
-// All rights reserved.
+// Tideland Go BCD
+//
+// Copyright (C) 2025 Frank Mueller / Tideland / Oldenburg / Germany
+//
+// All rights reserved. Use of this source code is governed
+// by the new BSD license.
 
 package bcd
 
@@ -8,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestNewBCD(t *testing.T) {
+func TestNewBCD_String(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
@@ -27,6 +31,7 @@ func TestNewBCD(t *testing.T) {
 		{"large number", "999999999999999999.99", "999999999999999999.99", false},
 		{"very small", "0.000001", "0.000001", false},
 		{"empty string", "", "0", false},
+		{"scientific notation", "1.23e-4", "0.000123", false},
 		{"invalid format", "12.34.56", "", true},
 		{"invalid chars", "12a34", "", true},
 	}
@@ -45,6 +50,130 @@ func TestNewBCD(t *testing.T) {
 	}
 }
 
+func TestNewBCD_Generic(t *testing.T) {
+	// Test generic API with different types
+	t.Run("int types", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			value any
+			want  string
+		}{
+			{"int", int(123), "123"},
+			{"int8", int8(-128), "-128"},
+			{"int16", int16(32767), "32767"},
+			{"int32", int32(-2147483648), "-2147483648"},
+			{"int64", int64(9223372036854775807), "9223372036854775807"},
+			{"uint", uint(123), "123"},
+			{"uint8", uint8(255), "255"},
+			{"uint16", uint16(65535), "65535"},
+			{"uint32", uint32(4294967295), "4294967295"},
+			{"uint64", uint64(9223372036854775807), "9223372036854775807"}, // max int64
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var got *BCD
+				var err error
+
+				switch v := tt.value.(type) {
+				case int:
+					got, err = New(v)
+				case int8:
+					got, err = New(v)
+				case int16:
+					got, err = New(v)
+				case int32:
+					got, err = New(v)
+				case int64:
+					got, err = New(v)
+				case uint:
+					got, err = New(v)
+				case uint8:
+					got, err = New(v)
+				case uint16:
+					got, err = New(v)
+				case uint32:
+					got, err = New(v)
+				case uint64:
+					got, err = New(v)
+				}
+
+				if err != nil {
+					t.Errorf("New(%T) error = %v", tt.value, err)
+					return
+				}
+				if got.String() != tt.want {
+					t.Errorf("New(%v) = %v, want %v", tt.value, got.String(), tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("float types", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			value any
+			opts  []Option
+			want  string
+		}{
+			{"float32", float32(123.45), nil, "123.449997"}, // float32 precision
+			{"float64", float64(123.45), nil, "123.45"},
+			{"float with scale", 123.456789, []Option{WithScale(3)}, "123.457"},
+			{"float with rounding", 1.2345, []Option{WithScale(2), WithRounding(RoundDown)}, "1.23"},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var got *BCD
+				var err error
+
+				switch v := tt.value.(type) {
+				case float32:
+					got, err = New(v, tt.opts...)
+				case float64:
+					got, err = New(v, tt.opts...)
+				}
+
+				if err != nil {
+					t.Errorf("New(%T) error = %v", tt.value, err)
+					return
+				}
+				if got.String() != tt.want {
+					t.Errorf("New(%v) = %v, want %v", tt.value, got.String(), tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("error cases", func(t *testing.T) {
+		_, err := New(math.NaN())
+		if err == nil {
+			t.Error("New(NaN) expected error")
+		}
+
+		_, err = New(math.Inf(1))
+		if err == nil {
+			t.Error("New(Inf) expected error")
+		}
+	})
+}
+
+func TestMust(t *testing.T) {
+	// Test that Must works correctly
+	bcd := Must("123.45")
+	if bcd.String() != "123.45" {
+		t.Errorf("Must() = %v, want 123.45", bcd.String())
+	}
+
+	// Test that Must panics on error
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Must() did not panic on invalid input")
+		}
+	}()
+	Must("invalid")
+}
+
 func TestBCDArithmetic(t *testing.T) {
 	tests := []struct {
 		name string
@@ -59,20 +188,20 @@ func TestBCDArithmetic(t *testing.T) {
 		{"add decimals", "12.34", "56.78", "+", "69.12"},
 		{"add with carry", "999", "1", "+", "1000"},
 		{"add zero", "123.45", "0", "+", "123.45"},
-		
+
 		// Subtraction
 		{"subtract positive", "100", "30", "-", "70"},
 		{"subtract larger", "30", "100", "-", "-70"},
 		{"subtract decimals", "12.34", "5.67", "-", "6.67"},
 		{"subtract same", "123.45", "123.45", "-", "0"},
-		
+
 		// Multiplication
 		{"multiply integers", "12", "34", "*", "408"},
 		{"multiply decimals", "1.2", "3.4", "*", "4.08"},
 		{"multiply by zero", "123.45", "0", "*", "0"},
 		{"multiply negative", "-5", "6", "*", "-30"},
 		{"multiply two negatives", "-5", "-6", "*", "30"},
-		
+
 		// Division
 		{"divide integers", "100", "5", "/", "20"},
 		{"divide with decimal", "10", "4", "/", "2.5"},
@@ -105,7 +234,7 @@ func TestBCDArithmetic(t *testing.T) {
 					t.Fatalf("Division error: %v", err)
 				}
 				// Simplify result for comparison
-				result = result.Round(2, RoundHalfUp)
+				result = result.Round(2, RoundHalfUp).Normalize()
 			}
 
 			if result.String() != tt.want {
@@ -170,29 +299,29 @@ func TestBCDRounding(t *testing.T) {
 		{"half up 1.24", "1.24", 1, RoundHalfUp, "1.2"},
 		{"half up 1.26", "1.26", 1, RoundHalfUp, "1.3"},
 		{"half up negative", "-1.25", 1, RoundHalfUp, "-1.3"},
-		
+
 		// RoundHalfDown
 		{"half down 1.25", "1.25", 1, RoundHalfDown, "1.2"},
 		{"half down 1.26", "1.26", 1, RoundHalfDown, "1.3"},
-		
+
 		// RoundHalfEven (Banker's rounding)
 		{"half even 1.25", "1.25", 1, RoundHalfEven, "1.2"},
 		{"half even 1.35", "1.35", 1, RoundHalfEven, "1.4"},
 		{"half even 2.25", "2.25", 1, RoundHalfEven, "2.2"},
 		{"half even 2.35", "2.35", 1, RoundHalfEven, "2.4"},
-		
+
 		// RoundUp (away from zero)
 		{"round up positive", "1.21", 1, RoundUp, "1.3"},
 		{"round up negative", "-1.21", 1, RoundUp, "-1.3"},
-		
+
 		// RoundDown (towards zero)
 		{"round down positive", "1.29", 1, RoundDown, "1.2"},
 		{"round down negative", "-1.29", 1, RoundDown, "-1.2"},
-		
+
 		// RoundCeiling
 		{"ceiling positive", "1.21", 1, RoundCeiling, "1.3"},
 		{"ceiling negative", "-1.29", 1, RoundCeiling, "-1.2"},
-		
+
 		// RoundFloor
 		{"floor positive", "1.29", 1, RoundFloor, "1.2"},
 		{"floor negative", "-1.21", 1, RoundFloor, "-1.3"},
@@ -203,7 +332,7 @@ func TestBCDRounding(t *testing.T) {
 			bcd, _ := New(tt.value)
 			got := bcd.Round(tt.scale, tt.mode)
 			if got.String() != tt.want {
-				t.Errorf("Round(%s, %d, %v) = %s, want %s", 
+				t.Errorf("Round(%s, %d, %v) = %s, want %s",
 					tt.value, tt.scale, tt.mode, got.String(), tt.want)
 			}
 		})
@@ -275,12 +404,12 @@ func TestCurrency(t *testing.T) {
 		for _, tt := range tests {
 			curr, err := NewCurrency(tt.amount, tt.code)
 			if (err != nil) != tt.err {
-				t.Errorf("NewCurrency(%s, %s) error = %v, wantErr %v", 
+				t.Errorf("NewCurrency(%s, %s) error = %v, wantErr %v",
 					tt.amount, tt.code, err, tt.err)
 				continue
 			}
 			if err == nil && curr.String() != tt.want {
-				t.Errorf("NewCurrency(%s, %s) = %s, want %s", 
+				t.Errorf("NewCurrency(%s, %s) = %s, want %s",
 					tt.amount, tt.code, curr.String(), tt.want)
 			}
 		}
@@ -322,7 +451,7 @@ func TestCurrency(t *testing.T) {
 
 	t.Run("CurrencyAllocation", func(t *testing.T) {
 		total, _ := NewCurrency("100", "USD")
-		
+
 		// Split evenly
 		parts, err := total.Split(3)
 		if err != nil {
@@ -400,41 +529,42 @@ func TestBCDPrecisionMaintenance(t *testing.T) {
 	a, _ := New("0.1")
 	b, _ := New("0.2")
 	sum := a.Add(b)
-	
+
 	if sum.String() != "0.3" {
 		t.Errorf("0.1 + 0.2 = %s, want 0.3", sum.String())
 	}
 
 	// Test repeated additions don't lose precision
-	total := Zero()
 	penny, _ := New("0.01")
+	total := Zero()
 	for range 100 {
 		total = total.Add(penny)
 	}
-	
-	if total.String() != "1" {
-		t.Errorf("100 * 0.01 = %s, want 1", total.String())
+
+	if total.Normalize().String() != "1" {
+		t.Errorf("100 * 0.01 = %s, want 1", total.Normalize().String())
 	}
 
 	// Test division precision
-	one, _ := New("1")
-	three, _ := New("3")
-	third, _ := one.Div(three, 20, RoundHalfUp)
-	
-	// Multiply back
-	result := third.Mul(three)
-	result = result.Round(10, RoundHalfUp)
-	
-	if result.String() != "1" {
-		t.Errorf("(1/3) * 3 = %s, want 1", result.String())
-	}
+	t.Run("DivisionPrecision", func(t *testing.T) {
+		one, _ := New("1")
+		three, _ := New("3")
+		third, _ := one.Div(three, 20, RoundHalfUp)
+
+		// Multiply back
+		result := third.Mul(three)
+		result = result.Round(10, RoundHalfUp).Normalize()
+
+		if result.String() != "1" {
+			t.Errorf("(1/3) * 3 = %s, want 1", result.String())
+		}
+	})
 }
 
 func BenchmarkBCDAddition(b *testing.B) {
 	x, _ := New("123.45")
 	y, _ := New("678.90")
-	
-	
+
 	for b.Loop() {
 		_ = x.Add(y)
 	}
@@ -443,9 +573,8 @@ func BenchmarkBCDAddition(b *testing.B) {
 func BenchmarkBCDMultiplication(b *testing.B) {
 	x, _ := New("123.45")
 	y, _ := New("678.90")
-	
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_ = x.Mul(y)
 	}
 }
@@ -453,8 +582,7 @@ func BenchmarkBCDMultiplication(b *testing.B) {
 func BenchmarkBCDDivision(b *testing.B) {
 	x, _ := New("123.45")
 	y, _ := New("678.90")
-	
-	
+
 	for b.Loop() {
 		_, _ = x.Div(y, 10, RoundHalfUp)
 	}

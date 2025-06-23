@@ -1,5 +1,9 @@
-// Copyright (c) 2024, Frank Mueller / Tideland
-// All rights reserved.
+// Tideland Go BCD
+//
+// Copyright (C) 2025 Frank Mueller / Tideland / Oldenburg / Germany
+//
+// All rights reserved. Use of this source code is governed
+// by the new BSD license.
 
 // Package bcd provides a Binary Coded Decimal (BCD) implementation
 // for precise decimal arithmetic, particularly useful for financial
@@ -7,19 +11,18 @@
 package bcd
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 )
 
-// Common errors for BCD operations.
+// Common errors returned by the package.
 var (
-	ErrDivisionByZero = errors.New("division by zero")
-	ErrInvalidFormat  = errors.New("invalid decimal format")
-	ErrOverflow       = errors.New("arithmetic overflow")
-	ErrPrecisionLoss  = errors.New("precision loss")
+	ErrDivisionByZero = fmt.Errorf("division by zero")
+	ErrInvalidFormat  = fmt.Errorf("invalid decimal format")
+	ErrOverflow       = fmt.Errorf("numeric overflow")
+	ErrPrecisionLoss  = fmt.Errorf("precision loss")
 )
 
 // RoundingMode defines how to round decimal numbers.
@@ -42,24 +45,156 @@ const (
 	RoundFloor
 )
 
-// BCD represents a decimal number using Binary Coded Decimal encoding.
-// Each decimal digit is stored separately to avoid floating-point errors.
+// BCD represents a decimal number using binary coded decimal encoding.
 type BCD struct {
-	// digits stores the decimal digits in little-endian order (least significant first).
-	// For example, 123.45 would be stored as [5, 4, 3, 2, 1].
+	// digits stores the decimal digits in little-endian order.
+	// For example, 123.45 is stored as [5, 4, 3, 2, 1].
 	digits []uint8
 	// scale is the number of digits after the decimal point.
-	// For 123.45, scale would be 2.
+	// For 123.45, scale is 2.
 	scale int
 	// negative indicates if the number is negative.
 	negative bool
 }
 
-// New creates a new BCD from a string representation.
-func New(s string) (*BCD, error) {
+// Numeric represents types that can be converted to BCD.
+type Numeric interface {
+	~string | ~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
+		~float32 | ~float64
+}
+
+// Option represents optional parameters for BCD creation.
+type Option func(*options)
+
+type options struct {
+	scale        int
+	roundingMode RoundingMode
+}
+
+// WithScale sets the scale for float conversions.
+func WithScale(scale int) Option {
+	return func(o *options) {
+		o.scale = scale
+	}
+}
+
+// WithRounding sets the rounding mode.
+func WithRounding(mode RoundingMode) Option {
+	return func(o *options) {
+		o.roundingMode = mode
+	}
+}
+
+// New creates a BCD from any numeric type.
+func New[T Numeric](value T, opts ...Option) (*BCD, error) {
+	options := &options{
+		scale:        6, // default scale for floats
+		roundingMode: RoundHalfEven,
+	}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	// Use type switch on the underlying value
+	var v any = value
+	switch val := v.(type) {
+	case string:
+		return parseString(val)
+	case int:
+		return fromInt64(int64(val)), nil
+	case int8:
+		return fromInt64(int64(val)), nil
+	case int16:
+		return fromInt64(int64(val)), nil
+	case int32:
+		return fromInt64(int64(val)), nil
+	case int64:
+		return fromInt64(val), nil
+	case uint:
+		if val > math.MaxInt64 {
+			return nil, ErrOverflow
+		}
+		return fromInt64(int64(val)), nil
+	case uint8:
+		return fromInt64(int64(val)), nil
+	case uint16:
+		return fromInt64(int64(val)), nil
+	case uint32:
+		return fromInt64(int64(val)), nil
+	case uint64:
+		if val > math.MaxInt64 {
+			return nil, ErrOverflow
+		}
+		return fromInt64(int64(val)), nil
+	case float32:
+		return fromFloat64(float64(val), options.scale)
+	case float64:
+		return fromFloat64(val, options.scale)
+	default:
+		return nil, fmt.Errorf("%w: unsupported type %T", ErrInvalidFormat, value)
+	}
+}
+
+// Must creates a BCD and panics on error.
+// Useful for package-level variables and constants.
+func Must[T Numeric](value T, opts ...Option) *BCD {
+	bcd, err := New(value, opts...)
+	if err != nil {
+		panic(fmt.Sprintf("bcd.Must: %v", err))
+	}
+	return bcd
+}
+
+// Zero returns a BCD representing zero.
+func Zero() *BCD {
+	return &BCD{digits: []uint8{0}, scale: 0, negative: false}
+}
+
+// parseString parses a decimal string into a BCD.
+func parseString(s string) (*BCD, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return &BCD{digits: []uint8{0}, scale: 0, negative: false}, nil
+		return Zero(), nil
+	}
+
+	// Handle scientific notation
+	if strings.ContainsAny(s, "eE") {
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidFormat, err)
+		}
+
+		// Determine appropriate scale
+		// For very small numbers, we need to ensure enough decimal places
+		absF := math.Abs(f)
+		scale := 6 // default
+
+		if absF < 1 && absF > 0 {
+			// For small numbers, determine scale based on the first significant digit
+			scale = 0
+			temp := absF
+			for temp < 1 {
+				temp *= 10
+				scale++
+			}
+			// Add a few more digits for precision
+			scale += 6
+		}
+
+		// Also check if the original string had decimal places specified
+		if dotIdx := strings.Index(s, "."); dotIdx >= 0 {
+			eIdx := strings.IndexAny(s, "eE")
+			if eIdx < 0 {
+				eIdx = len(s)
+			}
+			specifiedScale := eIdx - dotIdx - 1
+			if specifiedScale > scale {
+				scale = specifiedScale
+			}
+		}
+
+		return fromFloat64(f, scale)
 	}
 
 	// Handle sign
@@ -100,14 +235,13 @@ func New(s string) (*BCD, error) {
 	}
 
 	// Create digit array (little-endian)
-	digits := make([]uint8, len(allDigits))
-	for i := 0; i < len(allDigits); i++ {
-		digits[i] = uint8(allDigits[len(allDigits)-1-i] - '0')
+	if allDigits == "" || allDigits == "0" {
+		return Zero(), nil
 	}
 
-	// Handle zero
-	if len(digits) == 0 || (len(digits) == 1 && digits[0] == 0) {
-		return &BCD{digits: []uint8{0}, scale: 0, negative: false}, nil
+	digits := make([]uint8, len(allDigits))
+	for i := range len(allDigits) {
+		digits[i] = uint8(allDigits[len(allDigits)-1-i] - '0')
 	}
 
 	// Remove leading zeros
@@ -122,10 +256,10 @@ func New(s string) (*BCD, error) {
 	}, nil
 }
 
-// NewFromInt creates a BCD from an integer.
-func NewFromInt(n int64) *BCD {
+// fromInt64 creates a BCD from an int64.
+func fromInt64(n int64) *BCD {
 	if n == 0 {
-		return &BCD{digits: []uint8{0}, scale: 0, negative: false}
+		return Zero()
 	}
 
 	negative := n < 0
@@ -146,8 +280,8 @@ func NewFromInt(n int64) *BCD {
 	}
 }
 
-// NewFromFloat creates a BCD from a float with specified scale.
-func NewFromFloat(f float64, scale int) (*BCD, error) {
+// fromFloat64 creates a BCD from a float64 with specified scale.
+func fromFloat64(f float64, scale int) (*BCD, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return nil, ErrInvalidFormat
 	}
@@ -155,12 +289,7 @@ func NewFromFloat(f float64, scale int) (*BCD, error) {
 	// Convert to string with proper precision
 	format := fmt.Sprintf("%%.%df", scale)
 	s := fmt.Sprintf(format, f)
-	return New(s)
-}
-
-// Zero returns a BCD representing zero.
-func Zero() *BCD {
-	return &BCD{digits: []uint8{0}, scale: 0, negative: false}
+	return parseString(s)
 }
 
 // Copy creates a deep copy of the BCD.
@@ -174,112 +303,97 @@ func (b *BCD) Copy() *BCD {
 	}
 }
 
-// String returns the string representation of the BCD with trailing zeros removed.
+// String returns the string representation of the BCD.
 func (b *BCD) String() string {
-	if isZero(b.digits) {
+	if len(b.digits) == 0 || (len(b.digits) == 1 && b.digits[0] == 0) {
 		return "0"
 	}
 
-	var result strings.Builder
+	// Convert digits to string (remember they're in little-endian)
+	var sb strings.Builder
+
+	// Pre-allocate capacity
+	capacity := len(b.digits) + 1 // digits + possible decimal point
+	if b.negative {
+		capacity++
+	}
+	sb.Grow(capacity)
 
 	if b.negative {
-		result.WriteByte('-')
+		sb.WriteByte('-')
 	}
 
-	// Determine decimal point position
+	// Determine where to place the decimal point
 	intDigits := len(b.digits) - b.scale
+
 	if intDigits <= 0 {
 		// Number is less than 1
-		result.WriteString("0.")
-		for i := 0; i < -intDigits; i++ {
-			result.WriteByte('0')
+		sb.WriteString("0.")
+		// Add leading zeros
+		for range -intDigits {
+			sb.WriteByte('0')
 		}
+		// Add the digits
 		for i := len(b.digits) - 1; i >= 0; i-- {
-			result.WriteByte('0' + b.digits[i])
+			sb.WriteByte(b.digits[i] + '0')
 		}
 	} else {
-		// Write integer part
+		// Add integer part
 		for i := len(b.digits) - 1; i >= b.scale; i-- {
-			result.WriteByte('0' + b.digits[i])
+			sb.WriteByte(b.digits[i] + '0')
 		}
-		// Write decimal part if exists
+
 		if b.scale > 0 {
-			// Check if we have any non-zero decimal digits
-			hasNonZeroDecimal := false
-			for i := 0; i < b.scale && i < len(b.digits); i++ {
-				if b.digits[i] != 0 {
-					hasNonZeroDecimal = true
-					break
-				}
-			}
-			
-			if hasNonZeroDecimal {
-				result.WriteByte('.')
-				
-				// Build decimal part in a temporary buffer to find trailing zeros
-				decimalPart := make([]byte, b.scale)
-				for i := 0; i < b.scale; i++ {
-					if i < len(b.digits) {
-						decimalPart[b.scale-1-i] = byte('0' + b.digits[i])
-					} else {
-						decimalPart[b.scale-1-i] = '0'
-					}
-				}
-				
-				// Find last non-zero position
-				lastNonZero := len(decimalPart) - 1
-				for lastNonZero >= 0 && decimalPart[lastNonZero] == '0' {
-					lastNonZero--
-				}
-				
-				// Write decimal digits up to last non-zero
-				for i := 0; i <= lastNonZero; i++ {
-					result.WriteByte(decimalPart[i])
-				}
+			// Add decimal point and fractional part
+			sb.WriteByte('.')
+			for i := b.scale - 1; i >= 0; i-- {
+				sb.WriteByte(b.digits[i] + '0')
 			}
 		}
 	}
 
-	return result.String()
+	return sb.String()
 }
 
-// IsZero returns true if the BCD represents zero.
+// IsZero returns true if the BCD is zero.
 func (b *BCD) IsZero() bool {
 	return isZero(b.digits)
 }
 
 // IsNegative returns true if the BCD is negative.
 func (b *BCD) IsNegative() bool {
-	return b.negative
+	return b.negative && !b.IsZero()
 }
 
-// IsPositive returns true if the BCD is positive (greater than zero).
+// IsPositive returns true if the BCD is positive.
 func (b *BCD) IsPositive() bool {
 	return !b.negative && !b.IsZero()
 }
 
-// Scale returns the number of decimal places.
+// Scale returns the scale (number of decimal places) of the BCD.
 func (b *BCD) Scale() int {
 	return b.scale
 }
 
 // Precision returns the total number of significant digits.
 func (b *BCD) Precision() int {
-	// Remove trailing zeros after decimal point for precision count
+	// Remove trailing zeros from fractional part for precision calculation
 	digits := b.digits
 	scale := b.scale
-	for scale > 0 && len(digits) > 0 && digits[0] == 0 {
+
+	for len(digits) > 0 && scale > 0 && digits[0] == 0 {
 		digits = digits[1:]
 		scale--
 	}
+
 	return len(digits)
 }
 
 // Abs returns the absolute value of the BCD.
 func (b *BCD) Abs() *BCD {
-	result := b.Copy()
-	result.negative = false
-	return result
+	c := b.Copy()
+	c.negative = false
+	return c
 }
 
 // Neg returns the negation of the BCD.
@@ -287,15 +401,49 @@ func (b *BCD) Neg() *BCD {
 	if b.IsZero() {
 		return b.Copy()
 	}
-	result := b.Copy()
-	result.negative = !result.negative
-	return result
+	c := b.Copy()
+	c.negative = !c.negative
+	return c
 }
 
-// Cmp compares two BCDs.
-// Returns -1 if b < other, 0 if b == other, 1 if b > other.
+// Normalize removes trailing zeros after the decimal point.
+func (b *BCD) Normalize() *BCD {
+	if b.scale == 0 || b.IsZero() {
+		return b.Copy()
+	}
+
+	c := b.Copy()
+
+	// Count trailing zeros
+	trailingZeros := 0
+	for i := 0; i < c.scale && i < len(c.digits) && c.digits[i] == 0; i++ {
+		trailingZeros++
+	}
+
+	if trailingZeros > 0 {
+		// Remove trailing zeros
+		c.digits = c.digits[trailingZeros:]
+		c.scale -= trailingZeros
+
+		// If all fractional digits were zeros, set scale to 0
+		if c.scale == 0 || len(c.digits) == 0 {
+			c.scale = 0
+			if len(c.digits) == 0 {
+				c.digits = []uint8{0}
+			}
+		}
+	}
+
+	return c
+}
+
+// Cmp compares two BCDs and returns:
+//
+//	-1 if b < other
+//	 0 if b == other
+//	 1 if b > other
 func (b *BCD) Cmp(other *BCD) int {
-	// Handle different signs
+	// Handle signs
 	if b.negative && !other.negative {
 		return -1
 	}
@@ -303,17 +451,17 @@ func (b *BCD) Cmp(other *BCD) int {
 		return 1
 	}
 
-	// Same sign - compare magnitudes
-	cmp := compareMagnitudes(b, other)
+	// Same sign, compare magnitudes
+	result := compareMagnitudes(b, other)
 
-	// If both negative, reverse the comparison
+	// If both negative, reverse the result
 	if b.negative {
-		return -cmp
+		return -result
 	}
-	return cmp
+	return result
 }
 
-// Equal returns true if two BCDs are equal.
+// Equal returns true if b equals other.
 func (b *BCD) Equal(other *BCD) bool {
 	return b.Cmp(other) == 0
 }
@@ -338,69 +486,75 @@ func (b *BCD) GreaterOrEqual(other *BCD) bool {
 	return b.Cmp(other) >= 0
 }
 
-// Add adds two BCDs.
+// Add returns b + other.
 func (b *BCD) Add(other *BCD) *BCD {
-	// Handle signs
+	// Handle same sign
 	if b.negative == other.negative {
-		// Same sign - add magnitudes
-		result := addMagnitudes(b, other)
-		result.negative = b.negative
-		return result
+		aligned1, aligned2 := alignDecimals(b, other)
+		sum := addMagnitudes(aligned1, aligned2)
+		sum.negative = b.negative
+		return sum
 	}
 
-	// Different signs - subtract magnitudes
+	// Different signs: this is subtraction
 	cmp := compareMagnitudes(b, other)
-	if cmp >= 0 {
-		result := subtractMagnitudes(b, other)
-		result.negative = b.negative
-		return result
+	if cmp == 0 {
+		return Zero()
 	}
-	result := subtractMagnitudes(other, b)
-	result.negative = other.negative
-	return result
+
+	aligned1, aligned2 := alignDecimals(b, other)
+	if cmp > 0 {
+		// |b| > |other|
+		diff := subtractMagnitudes(aligned1, aligned2)
+		diff.negative = b.negative
+		return diff
+	} else {
+		// |b| < |other|
+		diff := subtractMagnitudes(aligned2, aligned1)
+		diff.negative = other.negative
+		return diff
+	}
 }
 
-// Sub subtracts other from b.
+// Sub returns b - other.
 func (b *BCD) Sub(other *BCD) *BCD {
 	return b.Add(other.Neg())
 }
 
-// Mul multiplies two BCDs.
+// Mul returns b * other.
 func (b *BCD) Mul(other *BCD) *BCD {
 	if b.IsZero() || other.IsZero() {
 		return Zero()
 	}
 
 	// Multiply digits
-	resultLen := len(b.digits) + len(other.digits)
-	result := make([]uint8, resultLen)
+	resultDigits := make([]uint8, len(b.digits)+len(other.digits))
 
-	for i := 0; i < len(b.digits); i++ {
+	for i := range b.digits {
 		carry := uint8(0)
-		for j := 0; j < len(other.digits); j++ {
-			prod := b.digits[i]*other.digits[j] + result[i+j] + carry
-			result[i+j] = prod % 10
+		for j := range other.digits {
+			prod := b.digits[i]*other.digits[j] + resultDigits[i+j] + carry
+			resultDigits[i+j] = prod % 10
 			carry = prod / 10
 		}
-	
 		if carry > 0 {
-			result[i+len(other.digits)] += carry
+			resultDigits[i+len(other.digits)] = carry
 		}
 	}
 
 	// Remove leading zeros
-	for len(result) > 1 && result[len(result)-1] == 0 {
-		result = result[:len(result)-1]
+	for len(resultDigits) > 1 && resultDigits[len(resultDigits)-1] == 0 {
+		resultDigits = resultDigits[:len(resultDigits)-1]
 	}
 
 	return &BCD{
-		digits:   result,
+		digits:   resultDigits,
 		scale:    b.scale + other.scale,
 		negative: b.negative != other.negative,
 	}
 }
 
-// Div divides b by other with specified scale and rounding mode.
+// Div returns b / other with the specified scale and rounding mode.
 func (b *BCD) Div(other *BCD, scale int, mode RoundingMode) (*BCD, error) {
 	if other.IsZero() {
 		return nil, ErrDivisionByZero
@@ -410,41 +564,17 @@ func (b *BCD) Div(other *BCD, scale int, mode RoundingMode) (*BCD, error) {
 		return Zero(), nil
 	}
 
-	// Convert to integer representation for division
-	// Multiply dividend by 10^(scale + extra precision)
-	extraPrecision := 10
-	totalScale := scale + extraPrecision
-	
-	// Create scaling factor
-	scaleFactor := NewFromInt(1)
-	for i := 0; i < totalScale; i++ {
-		scaleFactor = scaleFactor.Mul(NewFromInt(10))
-	}
-	
-	// Scale the dividend
-	scaledDividend := b.Mul(scaleFactor)
-	
-	// Perform division
-	quotient, err := scaledDividend.DivInt(other)
-	if err != nil {
-		return nil, err
-	}
-	
-	// Set the correct scale
-	quotient.scale = totalScale
+	// Perform division with extra precision for rounding
+	quotient, _ := divideWithRemainder(b, other, scale+1)
+
+	// Apply rounding
 	quotient.negative = b.negative != other.negative
-	
-	// Normalize to remove unnecessary trailing zeros
-	for quotient.scale > scale && len(quotient.digits) > 0 && quotient.digits[0] == 0 {
-		quotient.digits = quotient.digits[1:]
-		quotient.scale--
-	}
-	
-	// Round to requested scale
-	return quotient.Round(scale, mode), nil
+	quotient = quotient.Round(scale, mode)
+
+	return quotient, nil
 }
 
-// DivInt performs integer division.
+// DivInt returns the integer quotient b / other.
 func (b *BCD) DivInt(other *BCD) (*BCD, error) {
 	if other.IsZero() {
 		return nil, ErrDivisionByZero
@@ -454,37 +584,23 @@ func (b *BCD) DivInt(other *BCD) (*BCD, error) {
 		return Zero(), nil
 	}
 
-	// Align scales before division
-	dividend := b.Copy()
-	divisor := other.Copy()
-	
-	// If scales differ, adjust
-	if dividend.scale > divisor.scale {
-		// Add zeros to divisor
-		diff := dividend.scale - divisor.scale
-		padding := make([]uint8, diff)
-		divisor.digits = append(padding, divisor.digits...)
-		divisor.scale = dividend.scale
-	} else if divisor.scale > dividend.scale {
-		// Add zeros to dividend
-		diff := divisor.scale - dividend.scale
-		padding := make([]uint8, diff)
-		dividend.digits = append(padding, dividend.digits...)
-		dividend.scale = divisor.scale
-	}
-
-	quotient, _ := divideWithRemainder(dividend, divisor)
+	quotient, _ := divideWithRemainder(b, other, 0)
 	quotient.negative = b.negative != other.negative
 
-	// The quotient from divideWithRemainder already has scale 0
-	if len(quotient.digits) == 0 {
-		return Zero(), nil
+	// Truncate to integer
+	if quotient.scale > 0 {
+		// Remove fractional digits
+		if quotient.scale >= len(quotient.digits) {
+			return Zero(), nil
+		}
+		quotient.digits = quotient.digits[quotient.scale:]
+		quotient.scale = 0
 	}
 
 	return quotient, nil
 }
 
-// Mod returns the remainder of b divided by other.
+// Mod returns b % other.
 func (b *BCD) Mod(other *BCD) (*BCD, error) {
 	if other.IsZero() {
 		return nil, ErrDivisionByZero
@@ -494,175 +610,138 @@ func (b *BCD) Mod(other *BCD) (*BCD, error) {
 		return Zero(), nil
 	}
 
-	_, remainder := divideWithRemainder(b, other)
+	_, remainder := divideWithRemainder(b, other, 0)
 	remainder.negative = b.negative
+
 	return remainder, nil
 }
 
-// Round rounds the BCD to the specified scale using the given rounding mode.
-func (b *BCD) Round(scale int, mode RoundingMode) *BCD {
-	if scale < 0 {
-		scale = 0
+// Round rounds the BCD to the specified number of decimal places using the given mode.
+func (b *BCD) Round(places int, mode RoundingMode) *BCD {
+	if places < 0 {
+		places = 0
 	}
 
-	if b.scale <= scale {
+	// Already at desired precision
+	if b.scale <= places {
 		return b.Copy()
 	}
 
-	result := b.Copy()
-	digitsToRemove := result.scale - scale
-
-	if digitsToRemove >= len(result.digits) {
-		// All current digits would be removed, but we need to check for rounding
-		// For example, 0.999 rounded to 0 decimal places should give 1
-		
-		// Check if we should round up based on the most significant digit to be removed
-		if len(result.digits) > 0 {
-			// Find the highest digit that would be removed
-			highestRemovedIdx := len(result.digits) - 1
-			highestRemovedDigit := result.digits[highestRemovedIdx]
-			
-			// Apply rounding rules
-			shouldRoundUp := false
-			switch mode {
-			case RoundUp:
-				// Check if any digit is non-zero
-				for _, d := range result.digits {
-					if d > 0 {
-						shouldRoundUp = true
-						break
-					}
-				}
-			case RoundDown:
-				shouldRoundUp = false
-			case RoundHalfUp:
-				shouldRoundUp = highestRemovedDigit >= 5
-			case RoundHalfDown:
-				shouldRoundUp = highestRemovedDigit > 5
-			case RoundHalfEven:
-				shouldRoundUp = highestRemovedDigit > 5
-			case RoundCeiling:
-				if !result.negative {
-					for _, d := range result.digits {
-						if d > 0 {
-							shouldRoundUp = true
-							break
-						}
-					}
-				}
-			case RoundFloor:
-				if result.negative {
-					for _, d := range result.digits {
-						if d > 0 {
-							shouldRoundUp = true
-							break
-						}
-					}
-				}
-			}
-			
-			if shouldRoundUp {
-				// Result is 1 with appropriate scale
-				result = NewFromInt(1)
-				result.negative = b.negative
-				// Adjust scale if needed
-				for i := 0; i < scale; i++ {
-					result.digits = append([]uint8{0}, result.digits...)
-				}
-				result.scale = scale
-				return result
-			}
+	// Calculate how many digits to remove
+	removeCount := b.scale - places
+	if removeCount >= len(b.digits) {
+		// All digits would be removed
+		if b.IsZero() {
+			return Zero()
 		}
-		
+		// Round 0.00...xyz to 0 or ±1
+		if shouldRoundUp(b.digits[len(b.digits)-1], 0, false, mode, b.negative) {
+			result := &BCD{
+				digits:   []uint8{1},
+				scale:    places,
+				negative: b.negative,
+			}
+			if places == 0 {
+				result.scale = 0
+			} else {
+				// Need to add zeros
+				zeros := make([]uint8, places-1)
+				result.digits = append(zeros, 1)
+			}
+			return result
+		}
 		return Zero()
 	}
 
-	// Get rounding digit
-	roundingDigit := result.digits[digitsToRemove-1]
+	// Copy digits we're keeping
+	newDigits := make([]uint8, len(b.digits)-removeCount)
+	copy(newDigits, b.digits[removeCount:])
 
-	// Remove excess digits
-	result.digits = result.digits[digitsToRemove:]
-	result.scale = scale
-
-	// Apply rounding
-	shouldRoundUp := false
-	switch mode {
-	case RoundUp:
-		shouldRoundUp = roundingDigit > 0
-	case RoundDown:
-		shouldRoundUp = false
-	case RoundHalfUp:
-		shouldRoundUp = roundingDigit >= 5
-	case RoundHalfDown:
-		shouldRoundUp = roundingDigit > 5
-	case RoundHalfEven:
-		if roundingDigit > 5 {
-			shouldRoundUp = true
-		} else if roundingDigit == 5 {
-			// Round to even
-			if len(result.digits) > 0 {
-				shouldRoundUp = result.digits[0]%2 == 1
-			}
-		}
-	case RoundCeiling:
-		shouldRoundUp = !result.negative && roundingDigit > 0
-	case RoundFloor:
-		shouldRoundUp = result.negative && roundingDigit > 0
+	// Check if we need to round up
+	roundDigit := b.digits[removeCount-1]
+	var nextDigit uint8
+	if removeCount >= 2 {
+		nextDigit = b.digits[removeCount-2]
 	}
+	isEven := newDigits[0]%2 == 0
 
-	if shouldRoundUp {
-		carry := addOne(result.digits)
+	if shouldRoundUp(roundDigit, nextDigit, isEven, mode, b.negative) {
+		// Add 1 to the result
+		carry := uint8(1)
+		for i := 0; i < len(newDigits) && carry > 0; i++ {
+			sum := newDigits[i] + carry
+			newDigits[i] = sum % 10
+			carry = sum / 10
+		}
 		if carry > 0 {
-			// Need to add a new digit
-			result.digits = append(result.digits, carry)
+			newDigits = append(newDigits, carry)
 		}
 	}
 
-	// Handle zero
-	if isZero(result.digits) {
-		result.negative = false
+	// Remove trailing zeros if scale becomes 0
+	if places == 0 {
+		for len(newDigits) > 1 && newDigits[0] == 0 {
+			newDigits = newDigits[1:]
+		}
 	}
 
-	return result
+	return &BCD{
+		digits:   newDigits,
+		scale:    places,
+		negative: b.negative,
+	}
 }
 
-// ToInt64 converts the BCD to int64, truncating any decimal places.
+// ToInt64 converts the BCD to int64, returning an error if the value doesn't fit.
 func (b *BCD) ToInt64() (int64, error) {
-	// Start from the decimal point
-	startIdx := b.scale
-	if startIdx >= len(b.digits) {
+	// Truncate to integer (round towards zero)
+	rounded := b.Round(0, RoundDown)
+
+	// Check if it's zero
+	if rounded.IsZero() {
 		return 0, nil
 	}
 
+	// Convert digits to int64
 	var result int64
 	multiplier := int64(1)
 
-	for i := startIdx; i < len(b.digits); i++ {
-		digit := int64(b.digits[i])
-		if result > (math.MaxInt64-digit)/10 {
+	for _, digit := range rounded.digits {
+		digitValue := int64(digit) * multiplier
+
+		// Check for overflow
+		if multiplier > math.MaxInt64/10 {
 			return 0, ErrOverflow
 		}
-		result = result + digit*multiplier
+
+		newResult := result + digitValue
+		if (result > 0 && newResult < result) || (result < 0 && newResult > result) {
+			return 0, ErrOverflow
+		}
+
+		result = newResult
 		multiplier *= 10
 	}
 
 	if b.negative {
 		result = -result
+		if result > 0 {
+			return 0, ErrOverflow
+		}
 	}
 
 	return result, nil
 }
 
-// ToFloat64 converts the BCD to float64 (may lose precision).
+// ToFloat64 converts the BCD to float64.
 func (b *BCD) ToFloat64() float64 {
 	f, _ := strconv.ParseFloat(b.String(), 64)
 	return f
 }
 
+// Helper functions
 
-
-// Internal helper functions
-
+// isZero checks if all digits are zero.
 func isZero(digits []uint8) bool {
 	for _, d := range digits {
 		if d != 0 {
@@ -672,23 +751,25 @@ func isZero(digits []uint8) bool {
 	return true
 }
 
+// compareMagnitudes compares the absolute values of two BCDs.
 func compareMagnitudes(a, b *BCD) int {
-	// Align decimal places
-	aDigits, bDigits, _ := alignDecimals(a, b)
+	// Align decimals for comparison
+	aligned1, aligned2 := alignDecimals(a, b)
 
 	// Compare lengths
-	if len(aDigits) != len(bDigits) {
-		if len(aDigits) > len(bDigits) {
-			return 1
-		}
+	if len(aligned1.digits) > len(aligned2.digits) {
+		return 1
+	}
+	if len(aligned1.digits) < len(aligned2.digits) {
 		return -1
 	}
 
-	// Compare digit by digit (most significant first)
-	for i := len(aDigits) - 1; i >= 0; i-- {
-		if aDigits[i] > bDigits[i] {
+	// Same length, compare digits from most significant
+	for i := len(aligned1.digits) - 1; i >= 0; i-- {
+		if aligned1.digits[i] > aligned2.digits[i] {
 			return 1
-		} else if aDigits[i] < bDigits[i] {
+		}
+		if aligned1.digits[i] < aligned2.digits[i] {
 			return -1
 		}
 	}
@@ -696,53 +777,50 @@ func compareMagnitudes(a, b *BCD) int {
 	return 0
 }
 
-func alignDecimals(a, b *BCD) ([]uint8, []uint8, int) {
-	maxScale := max(b.scale, a.scale)
-
-	aDigits := make([]uint8, len(a.digits))
-	copy(aDigits, a.digits)
-	bDigits := make([]uint8, len(b.digits))
-	copy(bDigits, b.digits)
-
-	// Pad with zeros to align decimal places
-	if a.scale < maxScale {
-		padding := make([]uint8, maxScale-a.scale)
-		aDigits = append(padding, aDigits...)
-	}
-	if b.scale < maxScale {
-		padding := make([]uint8, maxScale-b.scale)
-		bDigits = append(padding, bDigits...)
+// alignDecimals aligns two BCDs to have the same scale.
+func alignDecimals(a, b *BCD) (*BCD, *BCD) {
+	if a.scale == b.scale {
+		return a.Copy(), b.Copy()
 	}
 
-	// Ensure same length
-	maxLen := max(len(bDigits), len(aDigits))
+	aCopy := a.Copy()
+	bCopy := b.Copy()
 
-	if len(aDigits) < maxLen {
-		aDigits = append(aDigits, make([]uint8, maxLen-len(aDigits))...)
-	}
-	if len(bDigits) < maxLen {
-		bDigits = append(bDigits, make([]uint8, maxLen-len(bDigits))...)
+	if a.scale < b.scale {
+		// Add zeros to a
+		diff := b.scale - a.scale
+		zeros := make([]uint8, diff)
+		aCopy.digits = append(zeros, aCopy.digits...)
+		aCopy.scale = b.scale
+	} else {
+		// Add zeros to b
+		diff := a.scale - b.scale
+		zeros := make([]uint8, diff)
+		bCopy.digits = append(zeros, bCopy.digits...)
+		bCopy.scale = a.scale
 	}
 
-	return aDigits, bDigits, maxScale
+	return aCopy, bCopy
 }
 
+// addMagnitudes adds two positive BCDs with the same scale.
 func addMagnitudes(a, b *BCD) *BCD {
-	aDigits, bDigits, scale := alignDecimals(a, b)
+	maxLen := max(len(b.digits), len(a.digits))
 
-	result := make([]uint8, len(aDigits)+1)
+	result := make([]uint8, maxLen+1)
 	carry := uint8(0)
 
-	for i := range aDigits {
-		sum := aDigits[i] + bDigits[i] + carry
+	for i := 0; i < maxLen || carry > 0; i++ {
+		sum := carry
+		if i < len(a.digits) {
+			sum += a.digits[i]
+		}
+		if i < len(b.digits) {
+			sum += b.digits[i]
+		}
+
 		result[i] = sum % 10
 		carry = sum / 10
-	}
-
-	if carry > 0 {
-		result[len(aDigits)] = carry
-	} else {
-		result = result[:len(aDigits)]
 	}
 
 	// Remove leading zeros
@@ -751,26 +829,29 @@ func addMagnitudes(a, b *BCD) *BCD {
 	}
 
 	return &BCD{
-		digits:   result,
-		scale:    scale,
-		negative: false,
+		digits: result,
+		scale:  a.scale,
 	}
 }
 
+// subtractMagnitudes subtracts b from a (assumes a >= b).
 func subtractMagnitudes(a, b *BCD) *BCD {
-	aDigits, bDigits, scale := alignDecimals(a, b)
-
-	result := make([]uint8, len(aDigits))
+	result := make([]uint8, len(a.digits))
 	borrow := uint8(0)
 
-	for i := range aDigits {
-		diff := int8(aDigits[i]) - int8(bDigits[i]) - int8(borrow)
+	for i := range a.digits {
+		diff := int8(a.digits[i]) - int8(borrow)
+		if i < len(b.digits) {
+			diff -= int8(b.digits[i])
+		}
+
 		if diff < 0 {
 			diff += 10
 			borrow = 1
 		} else {
 			borrow = 0
 		}
+
 		result[i] = uint8(diff)
 	}
 
@@ -780,78 +861,234 @@ func subtractMagnitudes(a, b *BCD) *BCD {
 	}
 
 	return &BCD{
-		digits:   result,
-		scale:    scale,
-		negative: false,
+		digits: result,
+		scale:  a.scale,
 	}
 }
 
-func addOne(digits []uint8) uint8 {
-	carry := uint8(1)
-	for i := 0; i < len(digits) && carry > 0; i++ {
-		sum := digits[i] + carry
-		digits[i] = sum % 10
-		carry = sum / 10
+// shouldRoundUp determines if rounding should increase the magnitude.
+func shouldRoundUp(digit, nextDigit uint8, isEven bool, mode RoundingMode, negative bool) bool {
+	switch mode {
+	case RoundDown:
+		return false
+	case RoundUp:
+		return digit > 0 || nextDigit > 0
+	case RoundHalfUp:
+		return digit >= 5
+	case RoundHalfDown:
+		return digit > 5 || (digit == 5 && nextDigit > 0)
+	case RoundHalfEven:
+		if digit > 5 || (digit == 5 && nextDigit > 0) {
+			return true
+		}
+		if digit == 5 && nextDigit == 0 {
+			return !isEven
+		}
+		return false
+	case RoundCeiling:
+		if negative {
+			return false
+		}
+		return digit > 0 || nextDigit > 0
+	case RoundFloor:
+		if !negative {
+			return false
+		}
+		return digit > 0 || nextDigit > 0
+	default:
+		return false
 	}
-	return carry
 }
 
-func divideWithRemainder(dividend, divisor *BCD) (*BCD, *BCD) {
-	// Simple long division implementation
-	// This is a basic implementation - production code might use more efficient algorithms
-
-	// Normalize operands to integers
-	dividendInt := dividend.Copy()
-	divisorInt := divisor.Copy()
-
-	// Scale to remove decimals
-	scaleAdjust := 0
-	if dividendInt.scale > divisorInt.scale {
-		scaleAdjust = dividendInt.scale - divisorInt.scale
-		padding := make([]uint8, scaleAdjust)
-		divisorInt.digits = append(padding, divisorInt.digits...)
-	} else if divisorInt.scale > dividendInt.scale {
-		scaleAdjust = divisorInt.scale - dividendInt.scale
-		padding := make([]uint8, scaleAdjust)
-		dividendInt.digits = append(padding, dividendInt.digits...)
+// divideWithRemainder performs long division of a by b.
+func divideWithRemainder(a, b *BCD, targetScale int) (*BCD, *BCD) {
+	if b.IsZero() {
+		panic("division by zero")
 	}
 
-	dividendInt.scale = 0
-	divisorInt.scale = 0
+	// Convert to integers by removing decimal points
+	// a has 'a.scale' decimal places, b has 'b.scale' decimal places
+	// We want the result to have 'targetScale' decimal places
+
+	// To get targetScale decimal places in the result, we need:
+	// (a * 10^(targetScale + b.scale)) / b
+	// This gives us targetScale decimal places after accounting for b's scale
+
+	dividend := a.Copy()
+	divisor := b.Copy()
+
+	// Add extra zeros to dividend to get desired precision
+	extraZeros := targetScale + b.scale
+	if extraZeros > 0 {
+		zeros := make([]uint8, extraZeros)
+		dividend.digits = append(zeros, dividend.digits...)
+	}
+
+	// Now both are treated as integers
+	dividend.scale = 0
+	divisor.scale = 0
 
 	// Perform integer division
-	if compareMagnitudes(dividendInt, divisorInt) < 0 {
-		return Zero(), dividendInt
+	quotient, remainder := divideIntegers(dividend, divisor)
+
+	// Set the correct scale
+	quotient.scale = targetScale + a.scale
+
+	return quotient, remainder
+}
+
+// divideIntegers performs integer division of two BCDs treated as integers
+func divideIntegers(a, b *BCD) (*BCD, *BCD) {
+	if len(b.digits) == 1 && b.digits[0] == 0 {
+		panic("division by zero")
 	}
 
-	quotientDigits := make([]uint8, 0)
-	remainder := Zero()
-
-	// Process dividend digits from most significant to least
-	for i := len(dividendInt.digits) - 1; i >= 0; i-- {
-		// Shift remainder left and add next digit
-		remainder.digits = append([]uint8{dividendInt.digits[i]}, remainder.digits...)
-		
-		// Find how many times divisor fits into current remainder
-		count := uint8(0)
-		for compareMagnitudes(remainder, divisorInt) >= 0 {
-			remainder = subtractMagnitudes(remainder, divisorInt)
-			count++
-		}
-
-		quotientDigits = append([]uint8{count}, quotientDigits...)
+	// Handle simple case where divisor is single digit
+	if len(b.digits) == 1 {
+		return divideBySmallInt(a, b.digits[0])
 	}
 
-	// Remove leading zeros from quotient
+	// For larger divisors, use long division
+	return longDivision(a, b)
+}
+
+// divideBySmallInt divides by a single digit
+func divideBySmallInt(a *BCD, divisor uint8) (*BCD, *BCD) {
+	if divisor == 0 {
+		panic("division by zero")
+	}
+
+	quotientDigits := make([]uint8, len(a.digits))
+	remainder := uint16(0)
+
+	// Process from most significant digit
+	for i := len(a.digits) - 1; i >= 0; i-- {
+		dividend := remainder*10 + uint16(a.digits[i])
+		quotientDigits[i] = uint8(dividend / uint16(divisor))
+		remainder = dividend % uint16(divisor)
+	}
+
+	// Remove leading zeros from the most significant end (the end of the array)
+	// But keep at least one digit
 	for len(quotientDigits) > 1 && quotientDigits[len(quotientDigits)-1] == 0 {
 		quotientDigits = quotientDigits[:len(quotientDigits)-1]
 	}
 
-	quotient := &BCD{
-		digits:   quotientDigits,
-		scale:    0,
-		negative: false,
+	return &BCD{digits: quotientDigits}, &BCD{digits: []uint8{uint8(remainder)}}
+}
+
+// longDivision performs long division for multi-digit divisors
+func longDivision(dividend, divisor *BCD) (*BCD, *BCD) {
+	if compareMagnitudes(dividend, divisor) < 0 {
+		return Zero(), dividend.Copy()
 	}
 
-	return quotient, remainder
+	// Convert divisor to uint64 if possible for faster division
+	if len(divisor.digits) <= 15 { // Fits in uint64
+		divisorValue := uint64(0)
+		multiplier := uint64(1)
+		for i := range divisor.digits {
+			divisorValue += uint64(divisor.digits[i]) * multiplier
+			multiplier *= 10
+		}
+
+		// Convert dividend to uint64 if possible
+		if len(dividend.digits) <= 15 {
+			dividendValue := uint64(0)
+			multiplier = 1
+			for i := range dividend.digits {
+				dividendValue += uint64(dividend.digits[i]) * multiplier
+				multiplier *= 10
+			}
+
+			quotientValue := dividendValue / divisorValue
+			remainderValue := dividendValue % divisorValue
+
+			// Convert back to BCD
+			quotient := &BCD{digits: []uint8{0}}
+			if quotientValue > 0 {
+				var qdigits []uint8
+				for quotientValue > 0 {
+					qdigits = append(qdigits, uint8(quotientValue%10))
+					quotientValue /= 10
+				}
+				quotient.digits = qdigits
+			}
+
+			remainder := &BCD{digits: []uint8{0}}
+			if remainderValue > 0 {
+				var rdigits []uint8
+				for remainderValue > 0 {
+					rdigits = append(rdigits, uint8(remainderValue%10))
+					remainderValue /= 10
+				}
+				remainder.digits = rdigits
+			}
+
+			return quotient, remainder
+		}
+	}
+
+	// Fallback to digit-by-digit division for large numbers
+	// This is still slow but at least correct
+	quotientDigits := make([]uint8, 0)
+	remainder := dividend.Copy()
+
+	// Estimate quotient by repeated subtraction with multipliers
+	for compareMagnitudes(remainder, divisor) >= 0 {
+		// Find the largest multiplier where divisor * multiplier <= remainder
+		multiplier := uint8(1)
+		testProduct := divisor.Copy()
+
+		for multiplier < 9 {
+			nextProduct := multiplyByDigit(divisor, multiplier+1)
+			if compareMagnitudes(nextProduct, remainder) > 0 {
+				break
+			}
+			multiplier++
+			testProduct = nextProduct
+		}
+
+		// Subtract divisor * multiplier from remainder
+		remainder = subtractMagnitudes(remainder, testProduct)
+		quotientDigits = append([]uint8{multiplier}, quotientDigits...)
+	}
+
+	// Reverse quotient digits
+	for i, j := 0, len(quotientDigits)-1; i < j; i, j = i+1, j-1 {
+		quotientDigits[i], quotientDigits[j] = quotientDigits[j], quotientDigits[i]
+	}
+
+	if len(quotientDigits) == 0 {
+		quotientDigits = []uint8{0}
+	}
+
+	return &BCD{digits: quotientDigits}, remainder
+}
+
+// multiplyByDigit multiplies a BCD by a single digit
+func multiplyByDigit(b *BCD, digit uint8) *BCD {
+	if digit == 0 {
+		return Zero()
+	}
+
+	result := make([]uint8, len(b.digits)+1)
+	carry := uint8(0)
+
+	for i := range b.digits {
+		prod := b.digits[i]*digit + carry
+		result[i] = prod % 10
+		carry = prod / 10
+	}
+
+	if carry > 0 {
+		result[len(b.digits)] = carry
+	} else {
+		result = result[:len(b.digits)]
+	}
+
+	return &BCD{
+		digits: result,
+		scale:  b.scale,
+	}
 }

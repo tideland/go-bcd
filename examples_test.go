@@ -1,20 +1,24 @@
-// Copyright (c) 2024, Frank Mueller / Tideland
-// All rights reserved.
+// Tideland Go BCD
+//
+// Copyright (C) 2025 Frank Mueller / Tideland / Oldenburg / Germany
+//
+// All rights reserved. Use of this source code is governed
+// by the new BSD license.
 
 package bcd_test
 
 import (
 	"fmt"
-	"log"
 
 	"tideland.dev/go/bcd"
 )
 
-// ExampleBCD_basic demonstrates basic BCD creation and arithmetic.
+// ExampleBCD_basic demonstrates basic BCD creation and arithmetic with generic API.
 func ExampleBCD_basic() {
-	// Create BCD numbers from strings
-	a, _ := bcd.New("123.45")
-	b, _ := bcd.New("67.89")
+	// Create BCD numbers from various types using generic API
+	a, _ := bcd.New("123.45") // from string
+	b, _ := bcd.New(67.89)    // from float64
+	c := bcd.Must(100)        // from int, using Must variant
 
 	// Basic arithmetic
 	sum := a.Add(b)
@@ -24,6 +28,7 @@ func ExampleBCD_basic() {
 
 	fmt.Println("a =", a)
 	fmt.Println("b =", b)
+	fmt.Println("c =", c)
 	fmt.Println("a + b =", sum)
 	fmt.Println("a - b =", difference)
 	fmt.Println("a * b =", product)
@@ -32,6 +37,7 @@ func ExampleBCD_basic() {
 	// Output:
 	// a = 123.45
 	// b = 67.89
+	// c = 100
 	// a + b = 191.34
 	// a - b = 55.56
 	// a * b = 8381.0205
@@ -41,8 +47,8 @@ func ExampleBCD_basic() {
 // ExampleBCD_precision demonstrates how BCD maintains exact decimal precision.
 func ExampleBCD_precision() {
 	// Classic floating-point problem: 0.1 + 0.2
-	a, _ := bcd.New("0.1")
-	b, _ := bcd.New("0.2")
+	a := bcd.Must("0.1") // Using Must for known-good values
+	b := bcd.Must("0.2")
 	sum := a.Add(b)
 
 	fmt.Printf("0.1 + 0.2 = %s (exact)\n", sum)
@@ -51,13 +57,13 @@ func ExampleBCD_precision() {
 	floatSum := 0.1 + 0.2
 	fmt.Printf("0.1 + 0.2 = %.17f (float)\n", floatSum)
 
-	// Repeated additions
-	penny, _ := bcd.New("0.01")
+	// Repeated additions using generic API
+	penny := bcd.Must(0.01, bcd.WithScale(2)) // from float with scale
 	total := bcd.Zero()
 	for range 100 {
 		total = total.Add(penny)
 	}
-	fmt.Printf("100 * 0.01 = %s\n", total)
+	fmt.Printf("100 * 0.01 = %s\n", total.Normalize())
 
 	// Output:
 	// 0.1 + 0.2 = 0.3 (exact)
@@ -65,17 +71,20 @@ func ExampleBCD_precision() {
 	// 100 * 0.01 = 1
 }
 
-// ExampleCurrency_basic demonstrates basic currency operations.
+// ExampleCurrency_basic demonstrates basic currency operations with generic API.
 func ExampleCurrency_basic() {
-	// Create currency amounts
-	price, _ := bcd.NewCurrency("19.99", "USD")
-	tax, _ := bcd.NewCurrency("1.60", "USD")
+	// Create currency amounts using generic API
+	price, _ := bcd.NewCurrency("19.99", "USD") // from string
+	tax, _ := bcd.NewCurrency(1.60, "USD")      // from float
+	shipping := bcd.MustNewCurrency(5, "USD")   // from int
 
 	// Calculate total
-	total, _ := price.Add(tax)
+	subtotal, _ := price.Add(tax)
+	total, _ := subtotal.Add(shipping)
 
 	fmt.Println("Price:", price)
 	fmt.Println("Tax:", tax)
+	fmt.Println("Shipping:", shipping)
 	fmt.Println("Total:", total)
 
 	// Different formatting options
@@ -86,30 +95,31 @@ func ExampleCurrency_basic() {
 	// Output:
 	// Price: $19.99
 	// Tax: $1.60
-	// Total: $21.59
-	// With code: $21.59 USD
-	// Symbol only: $21.59
-	// Plain: 21.59
+	// Shipping: $5.00
+	// Total: $26.59
+	// With code: $26.59 USD
+	// Symbol only: $26.59
+	// Plain: 26.59
 }
 
-// ExampleCurrency_calculations demonstrates currency calculations.
+// ExampleCurrency_calculations demonstrates currency calculations with generic API.
 func ExampleCurrency_calculations() {
-	// Shopping cart example
-	item1, _ := bcd.NewCurrency("29.99", "USD")
-	item2, _ := bcd.NewCurrency("45.50", "USD")
-	item3, _ := bcd.NewCurrency("12.99", "USD")
+	// Shopping cart example using generic API
+	item1 := bcd.MustNewCurrency("29.99", "USD") // from string
+	item2 := bcd.MustNewCurrency(45.50, "USD")   // from float
+	item3 := bcd.MustNewCurrency(12.99, "USD")   // from float
 
 	// Calculate subtotal
 	subtotal, _ := item1.Add(item2)
 	subtotal, _ = subtotal.Add(item3)
 
-	// Apply discount (15% off)
-	discountRate, _ := bcd.New("0.15")
+	// Apply discount (15% off) using Must for constants
+	discountRate := bcd.Must("0.15")
 	discount := subtotal.Mul(discountRate)
 	afterDiscount, _ := subtotal.Sub(discount)
 
 	// Calculate tax (8.5%)
-	taxRate, _ := bcd.New("0.085")
+	taxRate := bcd.Must(0.085, bcd.WithScale(3))
 	tax := afterDiscount.Mul(taxRate)
 	total, _ := afterDiscount.Add(tax)
 
@@ -129,8 +139,8 @@ func ExampleCurrency_calculations() {
 
 // ExampleCurrency_allocation demonstrates splitting amounts without losing pennies.
 func ExampleCurrency_allocation() {
-	// Split a bill among friends
-	bill, _ := bcd.NewCurrency("100.00", "USD")
+	// Split a bill among friends using generic API
+	bill := bcd.MustNewCurrency(100, "USD") // from int
 
 	// Split evenly among 3 people
 	shares, _ := bill.Split(3)
@@ -144,10 +154,10 @@ func ExampleCurrency_allocation() {
 	for _, share := range shares {
 		total = total.Add(share.Amount())
 	}
-	fmt.Printf("  Total: $%s (no pennies lost!)\n", total)
+	fmt.Printf("  Total: $%s (no pennies lost!)\n", total.Normalize())
 
 	// Allocate by ratios (e.g., splitting rent by room size)
-	rent, _ := bcd.NewCurrency("2000.00", "USD")
+	rent := bcd.MustNewCurrency(2000.00, "USD") // from float
 	// Room sizes: 100, 150, 250 sq ft
 	roomShares, _ := rent.Allocate([]int{100, 150, 250})
 	fmt.Println("\nSplitting $2000 rent by room size:")
@@ -162,7 +172,7 @@ func ExampleCurrency_allocation() {
 	//   Person 2: $33.33
 	//   Person 3: $33.33
 	//   Total: $100 (no pennies lost!)
-	// 
+	//
 	// Splitting $2000 rent by room size:
 	//   Room 1 (100 sq ft): $400.00
 	//   Room 2 (150 sq ft): $600.00
@@ -177,7 +187,7 @@ func ExampleParseCurrency() {
 		"¥1,234",
 		"USD 999.99",
 		"CHF 2'500.00",
-		"($50.00)",  // Negative amount
+		"($50.00)", // Negative amount
 	}
 
 	for _, input := range inputs {
@@ -198,13 +208,13 @@ func ExampleParseCurrency() {
 	// ($50.00)        -> -$50.00 (USD)
 }
 
-// ExampleCurrency_internationalPrices demonstrates handling multiple currencies.
+// ExampleCurrency_internationalPrices demonstrates handling multiple currencies with generic API.
 func ExampleCurrency_internationalPrices() {
-	// Product prices in different markets
-	priceUS, _ := bcd.NewCurrency("99.99", "USD")
-	priceEU, _ := bcd.NewCurrency("89.99", "EUR")
-	priceUK, _ := bcd.NewCurrency("79.99", "GBP")
-	priceJP, _ := bcd.NewCurrency("10000", "JPY")
+	// Product prices in different markets using generic API
+	priceUS := bcd.MustNewCurrency("99.99", "USD") // from string
+	priceEU := bcd.MustNewCurrency(89.99, "EUR")   // from float
+	priceUK := bcd.MustNewCurrency(79.99, "GBP")   // from float
+	priceJP := bcd.MustNewCurrency(10000, "JPY")   // from int (no decimals)
 
 	fmt.Println("International Pricing:")
 	fmt.Printf("  US: %s\n", priceUS.Format(true, true))
@@ -225,7 +235,7 @@ func ExampleCurrency_internationalPrices() {
 
 // ExampleBCD_rounding demonstrates different rounding modes.
 func ExampleBCD_rounding() {
-	value, _ := bcd.New("1.2350")
+	value := bcd.Must("1.2350") // Using Must for known-good value
 
 	modes := []struct {
 		name string
@@ -246,11 +256,11 @@ func ExampleBCD_rounding() {
 		fmt.Printf("  %-15s: %s\n", m.name, rounded)
 	}
 
-	// Banker's rounding examples
+	// Banker's rounding examples using generic API
 	fmt.Println("\nBanker's rounding (RoundHalfEven):")
 	examples := []string{"1.25", "1.35", "2.25", "2.35"}
 	for _, ex := range examples {
-		v, _ := bcd.New(ex)
+		v := bcd.Must(ex) // Using Must for examples
 		rounded := v.Round(1, bcd.RoundHalfEven)
 		fmt.Printf("  %s -> %s\n", ex, rounded)
 	}
@@ -264,7 +274,7 @@ func ExampleBCD_rounding() {
 	//   RoundHalfEven  : 1.24
 	//   RoundCeiling   : 1.24
 	//   RoundFloor     : 1.23
-	// 
+	//
 	// Banker's rounding (RoundHalfEven):
 	//   1.25 -> 1.2
 	//   1.35 -> 1.4
@@ -274,30 +284,36 @@ func ExampleBCD_rounding() {
 
 // ExampleCurrency_minorUnits demonstrates working with minor units (cents, pence, etc).
 func ExampleCurrency_minorUnits() {
-	// Create from minor units
+	// Create from minor units using generic API
 	cents := int64(12345)
-	amount, _ := bcd.NewCurrencyFromInt(cents, "USD")
+	amount := bcd.MustNewCurrencyMinor(cents, "USD")
 	fmt.Printf("%d cents = %s\n", cents, amount)
 
+	// Works with any integer type
+	pennies := uint32(9999)
+	amount2 := bcd.MustNewCurrencyMinor(pennies, "GBP")
+	fmt.Printf("%d pence = %s\n", pennies, amount2)
+
 	// Convert to minor units
-	price, _ := bcd.NewCurrency("99.99", "USD")
+	price := bcd.MustNewCurrency("99.99", "USD")
 	minorUnits, _ := price.ToMinorUnits()
 	fmt.Printf("%s = %d cents\n", price, minorUnits)
 
 	// Japanese Yen has no minor units
-	yen, _ := bcd.NewCurrency("1234", "JPY")
+	yen := bcd.MustNewCurrency(1234, "JPY") // from int
 	yenUnits, _ := yen.ToMinorUnits()
 	fmt.Printf("%s = %d yen\n", yen, yenUnits)
 
 	// Output:
 	// 12345 cents = $123.45
+	// 9999 pence = £99.99
 	// $99.99 = 9999 cents
 	// ¥1234 = 1234 yen
 }
 
-// ExampleCurrency_invoice demonstrates a complete invoice calculation.
+// ExampleCurrency_invoice demonstrates a complete invoice calculation with generic API.
 func ExampleCurrency_invoice() {
-	// Line items
+	// Line items using generic API
 	type LineItem struct {
 		Description string
 		Quantity    int64
@@ -305,21 +321,21 @@ func ExampleCurrency_invoice() {
 	}
 
 	items := []LineItem{
-		{"Widget Pro", 5, mustCurrency("49.99", "USD")},
-		{"Gadget Plus", 2, mustCurrency("129.95", "USD")},
-		{"Service Fee", 1, mustCurrency("25.00", "USD")},
+		{"Widget Pro", 5, bcd.MustNewCurrency("49.99", "USD")}, // from string
+		{"Gadget Plus", 2, bcd.MustNewCurrency(129.95, "USD")}, // from float
+		{"Service Fee", 1, bcd.MustNewCurrency(25, "USD")},     // from int
 	}
 
 	// Calculate line totals
 	fmt.Println("Invoice:")
 	fmt.Println(repeatString("-", 50))
-	
+
 	var subtotal *bcd.Currency
 	for _, item := range items {
 		lineTotal := item.UnitPrice.MulInt64(item.Quantity)
-		fmt.Printf("%-20s %2d x %8s = %8s\n", 
+		fmt.Printf("%-20s %2d x %8s = %8s\n",
 			item.Description, item.Quantity, item.UnitPrice, lineTotal)
-		
+
 		if subtotal == nil {
 			subtotal = lineTotal
 		} else {
@@ -330,17 +346,17 @@ func ExampleCurrency_invoice() {
 	fmt.Println(repeatString("-", 50))
 	fmt.Printf("%-35s %8s\n", "Subtotal:", subtotal)
 
-	// Apply discount
-	discountPercent, _ := bcd.New("0.10") // 10% discount
+	// Apply discount using Must for constants
+	discountPercent := bcd.Must("0.10") // 10% discount
 	discount := subtotal.Mul(discountPercent)
 	afterDiscount, _ := subtotal.Sub(discount)
 	fmt.Printf("%-35s %8s\n", "Discount (10%):", discount.Neg())
-	
+
 	// Calculate tax
-	taxRate, _ := bcd.New("0.0825") // 8.25% tax
+	taxRate := bcd.Must(0.0825, bcd.WithScale(4)) // 8.25% tax
 	tax := afterDiscount.Mul(taxRate)
 	total, _ := afterDiscount.Add(tax)
-	
+
 	fmt.Printf("%-35s %8s\n", "Tax (8.25%):", tax)
 	fmt.Println(repeatString("=", 50))
 	fmt.Printf("%-35s %8s\n", "Total:", total)
@@ -357,15 +373,6 @@ func ExampleCurrency_invoice() {
 	// Tax (8.25%):                          $39.71
 	// ==================================================
 	// Total:                               $521.08
-}
-
-// Helper functions for examples
-func mustCurrency(amount, code string) *bcd.Currency {
-	c, err := bcd.NewCurrency(amount, code)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return c
 }
 
 func repeatString(s string, n int) string {
