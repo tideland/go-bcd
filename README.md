@@ -273,7 +273,8 @@ See the [examples_test.go](examples_test.go) file for comprehensive examples inc
 
 ## License
 
-Copyright (c) 2024, Frank Mueller / Tideland
-All rights reserved.
+This project is licensed under the BSD License - see the [LICENSE](LICENSE) file for details.
 
-[License details here]
+## Contributors
+
+- Frank Mueller (https://github.com/themue / https://github.com/tideland / https://themue.dev)

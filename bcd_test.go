@@ -10,6 +10,8 @@ package bcd
 import (
 	"math"
 	"testing"
+
+	"tideland.dev/go/asserts/verify"
 )
 
 func TestNewBCD_String(t *testing.T) {
@@ -39,12 +41,11 @@ func TestNewBCD_String(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := New(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if err == nil && got.String() != tt.want {
-				t.Errorf("New() = %v, want %v", got.String(), tt.want)
+			if tt.wantErr {
+				verify.ErrorMatch(t, err, ".*")
+			} else {
+				verify.NoError(t, err)
+				verify.Equal(t, got.String(), tt.want)
 			}
 		})
 	}
@@ -73,38 +74,32 @@ func TestNewBCD_Generic(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				var got *BCD
-				var err error
 
 				switch v := tt.value.(type) {
 				case int:
-					got, err = New(v)
+					got, _ = New(v)
 				case int8:
-					got, err = New(v)
+					got, _ = New(v)
 				case int16:
-					got, err = New(v)
+					got, _ = New(v)
 				case int32:
-					got, err = New(v)
+					got, _ = New(v)
 				case int64:
-					got, err = New(v)
+					got, _ = New(v)
 				case uint:
-					got, err = New(v)
+					got, _ = New(v)
 				case uint8:
-					got, err = New(v)
+					got, _ = New(v)
 				case uint16:
-					got, err = New(v)
+					got, _ = New(v)
 				case uint32:
-					got, err = New(v)
+					got, _ = New(v)
 				case uint64:
-					got, err = New(v)
+					got, _ = New(v)
 				}
 
-				if err != nil {
-					t.Errorf("New(%T) error = %v", tt.value, err)
-					return
-				}
-				if got.String() != tt.want {
-					t.Errorf("New(%v) = %v, want %v", tt.value, got.String(), tt.want)
-				}
+				verify.NotNil(t, got)
+				verify.Equal(t, got.String(), tt.want)
 			})
 		}
 	})
@@ -134,42 +129,30 @@ func TestNewBCD_Generic(t *testing.T) {
 					got, err = New(v, tt.opts...)
 				}
 
-				if err != nil {
-					t.Errorf("New(%T) error = %v", tt.value, err)
-					return
-				}
-				if got.String() != tt.want {
-					t.Errorf("New(%v) = %v, want %v", tt.value, got.String(), tt.want)
-				}
+				verify.NoError(t, err)
+				verify.Equal(t, got.String(), tt.want)
 			})
 		}
 	})
 
 	t.Run("error cases", func(t *testing.T) {
 		_, err := New(math.NaN())
-		if err == nil {
-			t.Error("New(NaN) expected error")
-		}
+		verify.ErrorMatch(t, err, ".*")
 
 		_, err = New(math.Inf(1))
-		if err == nil {
-			t.Error("New(Inf) expected error")
-		}
+		verify.ErrorMatch(t, err, ".*")
 	})
 }
 
 func TestMust(t *testing.T) {
 	// Test that Must works correctly
 	bcd := Must("123.45")
-	if bcd.String() != "123.45" {
-		t.Errorf("Must() = %v, want 123.45", bcd.String())
-	}
+	verify.Equal(t, bcd.String(), "123.45")
 
 	// Test that Must panics on error
 	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Must() did not panic on invalid input")
-		}
+		r := recover()
+		verify.NotNil(t, r)
 	}()
 	Must("invalid")
 }
@@ -212,13 +195,10 @@ func TestBCDArithmetic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			a, err := New(tt.a)
-			if err != nil {
-				t.Fatalf("Failed to create BCD a: %v", err)
-			}
+			verify.NoError(t, err)
+
 			b, err := New(tt.b)
-			if err != nil {
-				t.Fatalf("Failed to create BCD b: %v", err)
-			}
+			verify.NoError(t, err)
 
 			var result *BCD
 			switch tt.op {
@@ -230,16 +210,12 @@ func TestBCDArithmetic(t *testing.T) {
 				result = a.Mul(b)
 			case "/":
 				result, err = a.Div(b, 10, RoundHalfUp)
-				if err != nil {
-					t.Fatalf("Division error: %v", err)
-				}
+				verify.NoError(t, err)
 				// Simplify result for comparison
 				result = result.Round(2, RoundHalfUp).Normalize()
 			}
 
-			if result.String() != tt.want {
-				t.Errorf("%s %s %s = %s, want %s", tt.a, tt.op, tt.b, result.String(), tt.want)
-			}
+			verify.Equal(t, result.String(), tt.want)
 		})
 	}
 }
@@ -268,19 +244,17 @@ func TestBCDComparison(t *testing.T) {
 			b, _ := New(tt.b)
 
 			got := a.Cmp(b)
-			if got != tt.cmp {
-				t.Errorf("Cmp(%s, %s) = %d, want %d", tt.a, tt.b, got, tt.cmp)
-			}
+			verify.Equal(t, got, tt.cmp)
 
 			// Test comparison methods
-			if tt.cmp < 0 && !a.LessThan(b) {
-				t.Errorf("LessThan(%s, %s) = false, want true", tt.a, tt.b)
+			if tt.cmp < 0 {
+				verify.True(t, a.LessThan(b))
 			}
-			if tt.cmp == 0 && !a.Equal(b) {
-				t.Errorf("Equal(%s, %s) = false, want true", tt.a, tt.b)
+			if tt.cmp == 0 {
+				verify.True(t, a.Equal(b))
 			}
-			if tt.cmp > 0 && !a.GreaterThan(b) {
-				t.Errorf("GreaterThan(%s, %s) = false, want true", tt.a, tt.b)
+			if tt.cmp > 0 {
+				verify.True(t, a.GreaterThan(b))
 			}
 		})
 	}
@@ -331,10 +305,7 @@ func TestBCDRounding(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			bcd, _ := New(tt.value)
 			got := bcd.Round(tt.scale, tt.mode)
-			if got.String() != tt.want {
-				t.Errorf("Round(%s, %d, %v) = %s, want %s",
-					tt.value, tt.scale, tt.mode, got.String(), tt.want)
-			}
+			verify.Equal(t, got.String(), tt.want)
 		})
 	}
 }
@@ -355,13 +326,8 @@ func TestBCDConversion(t *testing.T) {
 		for _, tt := range tests {
 			bcd, _ := New(tt.value)
 			got, err := bcd.ToInt64()
-			if err != nil {
-				t.Errorf("ToInt64(%s) error = %v", tt.value, err)
-				continue
-			}
-			if got != tt.want {
-				t.Errorf("ToInt64(%s) = %d, want %d", tt.value, got, tt.want)
-			}
+			verify.NoError(t, err)
+			verify.Equal(t, got, tt.want)
 		}
 	})
 
@@ -379,9 +345,7 @@ func TestBCDConversion(t *testing.T) {
 		for _, tt := range tests {
 			bcd, _ := New(tt.value)
 			got := bcd.ToFloat64()
-			if math.Abs(got-tt.want) > 0.0000001 {
-				t.Errorf("ToFloat64(%s) = %f, want %f", tt.value, got, tt.want)
-			}
+			verify.About(t, got, tt.want, 0.0000001)
 		}
 	})
 }
@@ -403,49 +367,12 @@ func TestCurrency(t *testing.T) {
 
 		for _, tt := range tests {
 			curr, err := NewCurrency(tt.amount, tt.code)
-			if (err != nil) != tt.err {
-				t.Errorf("NewCurrency(%s, %s) error = %v, wantErr %v",
-					tt.amount, tt.code, err, tt.err)
-				continue
+			if tt.err {
+				verify.ErrorMatch(t, err, ".*")
+			} else {
+				verify.NoError(t, err)
+				verify.Equal(t, curr.String(), tt.want)
 			}
-			if err == nil && curr.String() != tt.want {
-				t.Errorf("NewCurrency(%s, %s) = %s, want %s",
-					tt.amount, tt.code, curr.String(), tt.want)
-			}
-		}
-	})
-
-	t.Run("CurrencyArithmetic", func(t *testing.T) {
-		usd100, _ := NewCurrency("100", "USD")
-		usd50, _ := NewCurrency("50", "USD")
-		eur100, _ := NewCurrency("100", "EUR")
-
-		// Addition
-		sum, err := usd100.Add(usd50)
-		if err != nil {
-			t.Errorf("Add error: %v", err)
-		} else if sum.String() != "$150.00" {
-			t.Errorf("100 USD + 50 USD = %s, want $150.00", sum.String())
-		}
-
-		// Currency mismatch
-		_, err = usd100.Add(eur100)
-		if err == nil {
-			t.Error("Expected currency mismatch error")
-		}
-
-		// Multiplication
-		double := usd100.MulInt64(2)
-		if double.String() != "$200.00" {
-			t.Errorf("100 USD * 2 = %s, want $200.00", double.String())
-		}
-
-		// Division
-		half, err := usd100.DivInt64(2)
-		if err != nil {
-			t.Errorf("Div error: %v", err)
-		} else if half.String() != "$50.00" {
-			t.Errorf("100 USD / 2 = %s, want $50.00", half.String())
 		}
 	})
 
@@ -454,44 +381,51 @@ func TestCurrency(t *testing.T) {
 
 		// Split evenly
 		parts, err := total.Split(3)
-		if err != nil {
-			t.Errorf("Split error: %v", err)
-		} else {
-			if len(parts) != 3 {
-				t.Errorf("Split returned %d parts, want 3", len(parts))
-			}
-			// Check that sum equals original
-			sum := Zero()
-			for _, part := range parts {
-				sum = sum.Add(part.amount)
-			}
-			if !sum.Equal(total.amount) {
-				t.Errorf("Split sum = %s, want %s", sum.String(), total.String())
-			}
-			// First part should get the extra penny
-			if parts[0].String() != "$33.34" {
-				t.Errorf("First part = %s, want $33.34", parts[0].String())
-			}
-			if parts[1].String() != "$33.33" {
-				t.Errorf("Second part = %s, want $33.33", parts[1].String())
-			}
+		verify.NoError(t, err)
+		verify.Equal(t, len(parts), 3)
+
+		// Check that sum equals original
+		sum := Zero()
+		for _, part := range parts {
+			sum = sum.Add(part.Amount())
 		}
+		verify.True(t, sum.Equal(total.Amount()))
+
+		// First part should get the extra penny
+		verify.Equal(t, parts[0].String(), "$33.34")
+		verify.Equal(t, parts[1].String(), "$33.33")
+		verify.Equal(t, parts[2].String(), "$33.33")
 
 		// Allocate by ratios
 		parts, err = total.Allocate([]int{1, 2, 2})
-		if err != nil {
-			t.Errorf("Allocate error: %v", err)
-		} else {
-			if parts[0].String() != "$20.00" {
-				t.Errorf("First allocation = %s, want $20.00", parts[0].String())
-			}
-			if parts[1].String() != "$40.00" {
-				t.Errorf("Second allocation = %s, want $40.00", parts[1].String())
-			}
-			if parts[2].String() != "$40.00" {
-				t.Errorf("Third allocation = %s, want $40.00", parts[2].String())
-			}
-		}
+		verify.NoError(t, err)
+		verify.Equal(t, parts[0].String(), "$20.00")
+		verify.Equal(t, parts[1].String(), "$40.00")
+		verify.Equal(t, parts[2].String(), "$40.00")
+	})
+
+	t.Run("CurrencyArithmetic", func(t *testing.T) {
+		usd100, _ := NewCurrency("100", "USD")
+		usd50, _ := NewCurrency("50", "USD")
+		eur100, _ := NewCurrency("100", "EUR")
+
+		// Add same currency
+		sum, err := usd100.Add(usd50)
+		verify.NoError(t, err)
+		verify.Equal(t, sum.String(), "$150.00")
+
+		// Add different currencies should error
+		_, err = usd100.Add(eur100)
+		verify.ErrorMatch(t, err, ".*currency mismatch.*")
+
+		// Multiplication
+		double := usd100.MulInt64(2)
+		verify.Equal(t, double.String(), "$200.00")
+
+		// Division
+		half, err := usd100.DivInt64(2)
+		verify.NoError(t, err)
+		verify.Equal(t, half.String(), "$50.00")
 	})
 
 	t.Run("ParseCurrency", func(t *testing.T) {
@@ -510,29 +444,20 @@ func TestCurrency(t *testing.T) {
 
 		for _, tt := range tests {
 			curr, err := ParseCurrency(tt.input)
-			if err != nil {
-				t.Errorf("ParseCurrency(%s) error: %v", tt.input, err)
-				continue
-			}
-			if curr.String() != tt.want {
-				t.Errorf("ParseCurrency(%s) = %s, want %s", tt.input, curr.String(), tt.want)
-			}
-			if curr.Code() != tt.code {
-				t.Errorf("ParseCurrency(%s) code = %s, want %s", tt.input, curr.Code(), tt.code)
-			}
+			verify.NoError(t, err)
+			verify.Equal(t, curr.String(), tt.want)
+			verify.Equal(t, curr.Code(), tt.code)
 		}
 	})
 }
 
 func TestBCDPrecisionMaintenance(t *testing.T) {
-	// Test that operations maintain precision correctly
+	// Test that floating point errors don't occur
 	a, _ := New("0.1")
 	b, _ := New("0.2")
 	sum := a.Add(b)
 
-	if sum.String() != "0.3" {
-		t.Errorf("0.1 + 0.2 = %s, want 0.3", sum.String())
-	}
+	verify.Equal(t, sum.String(), "0.3")
 
 	// Test repeated additions don't lose precision
 	penny, _ := New("0.01")
@@ -541,9 +466,7 @@ func TestBCDPrecisionMaintenance(t *testing.T) {
 		total = total.Add(penny)
 	}
 
-	if total.Normalize().String() != "1" {
-		t.Errorf("100 * 0.01 = %s, want 1", total.Normalize().String())
-	}
+	verify.Equal(t, total.Normalize().String(), "1")
 
 	// Test division precision
 	t.Run("DivisionPrecision", func(t *testing.T) {
@@ -555,9 +478,7 @@ func TestBCDPrecisionMaintenance(t *testing.T) {
 		result := third.Mul(three)
 		result = result.Round(10, RoundHalfUp).Normalize()
 
-		if result.String() != "1" {
-			t.Errorf("(1/3) * 3 = %s, want 1", result.String())
-		}
+		verify.Equal(t, result.String(), "1")
 	})
 }
 

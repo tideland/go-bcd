@@ -251,29 +251,33 @@ func ParseCurrency(s string) (*Currency, error) {
 	}
 
 	// Regular expressions for different formats
-	symbolPatterns := map[string]string{
-		"USD": `^\$`,
-		"EUR": `^€`,
-		"GBP": `^£`,
-		"JPY": `^¥|^￥`,
-		"CNY": `^¥|^￥`,
-		"INR": `^₹`,
-		"KRW": `^₩`,
-		"BTC": `^₿`,
-		"CHF": `^Fr\.?`,
-		"SEK": `^kr`,
-		"NOK": `^kr`,
-		"DKK": `^kr`,
+	// Use slice of structs to ensure deterministic order
+	symbolPatterns := []struct {
+		code    string
+		pattern string
+	}{
+		{"USD", `^\$`},
+		{"EUR", `^€`},
+		{"GBP", `^£`},
+		{"JPY", `^¥|^￥`}, // Check JPY before CNY for deterministic behavior
+		{"INR", `^₹`},
+		{"KRW", `^₩`},
+		{"BTC", `^₿`},
+		{"CHF", `^Fr\.?`},
+		{"SEK", `^kr`},
+		{"NOK", `^kr`},
+		{"DKK", `^kr`},
+		{"CNY", `^¥|^￥`}, // CNY after JPY
 	}
 
 	// Try to identify currency by symbol
 	var identifiedCode string
 	var amountStr string
 
-	for code, pattern := range symbolPatterns {
-		re := regexp.MustCompile(pattern)
+	for _, sp := range symbolPatterns {
+		re := regexp.MustCompile(sp.pattern)
 		if re.MatchString(s) {
-			identifiedCode = code
+			identifiedCode = sp.code
 			amountStr = re.ReplaceAllString(s, "")
 			break
 		}
