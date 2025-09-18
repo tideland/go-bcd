@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// Currency errors.
+// Amount errors.
 var (
 	ErrUnknownCurrency  = fmt.Errorf("unknown currency code")
 	ErrCurrencyMismatch = fmt.Errorf("currency mismatch")
@@ -77,14 +77,14 @@ var currencyData = map[string]CurrencyInfo{
 	"XPD": {"XPD", "964", 2, "Pd", "Palladium (ounce)"},
 }
 
-// Currency represents a monetary amount in a specific currency.
-type Currency struct {
+// Amount represents a monetary amount in a specific currency.
+type Amount struct {
 	amount *BCD
 	info   CurrencyInfo
 }
 
-// NewCurrency creates a Currency from any numeric type.
-func NewCurrency[T any](value T, code string, opts ...Option) (*Currency, error) {
+// NewAmount creates an Amount from any numeric type.
+func NewAmount[T any](value T, code string, opts ...Option) (*Amount, error) {
 	code = strings.ToUpper(code)
 	info, ok := currencyData[code]
 	if !ok {
@@ -119,7 +119,7 @@ func NewCurrency[T any](value T, code string, opts ...Option) (*Currency, error)
 	// Round to currency's decimal places
 	amount = amount.Round(info.DecimalPlaces, RoundHalfEven)
 
-	return &Currency{
+	return &Amount{
 		amount: amount,
 		info:   info,
 	}, nil
@@ -159,23 +159,23 @@ func newFromAny(value any, opts ...Option) (*BCD, error) {
 	}
 }
 
-// MustNewCurrency creates a Currency and panics on error.
-func MustNewCurrency[T any](value T, code string, opts ...Option) *Currency {
-	c, err := NewCurrency(value, code, opts...)
+// MustNewAmount creates an Amount and panics on error.
+func MustNewAmount[T any](value T, code string, opts ...Option) *Amount {
+	c, err := NewAmount(value, code, opts...)
 	if err != nil {
-		panic(fmt.Sprintf("bcd.MustNewCurrency: %v", err))
+		panic(fmt.Sprintf("bcd.MustNewAmount: %v", err))
 	}
 	return c
 }
 
-// NewCurrencyMinor creates a Currency from minor units (cents, pence, etc.).
+// NewAmountMinor creates an Amount from minor units (cents, pence, etc.).
 // This function only accepts integer types.
 type IntegerType interface {
 	~int | ~int8 | ~int16 | ~int32 | ~int64 |
 		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
 }
 
-func NewCurrencyMinor[T IntegerType](minorUnits T, code string) (*Currency, error) {
+func NewAmountMinor[T IntegerType](minorUnits T, code string) (*Amount, error) {
 	code = strings.ToUpper(code)
 	info, ok := currencyData[code]
 	if !ok {
@@ -228,23 +228,23 @@ func NewCurrencyMinor[T IntegerType](minorUnits T, code string) (*Currency, erro
 		}
 	}
 
-	return &Currency{
+	return &Amount{
 		amount: amount,
 		info:   info,
 	}, nil
 }
 
-// MustNewCurrencyMinor creates a Currency from minor units and panics on error.
-func MustNewCurrencyMinor[T IntegerType](minorUnits T, code string) *Currency {
-	c, err := NewCurrencyMinor(minorUnits, code)
+// MustNewAmountMinor creates an Amount from minor units and panics on error.
+func MustNewAmountMinor[T IntegerType](minorUnits T, code string) *Amount {
+	c, err := NewAmountMinor(minorUnits, code)
 	if err != nil {
-		panic(fmt.Sprintf("bcd.MustNewCurrencyMinor: %v", err))
+		panic(fmt.Sprintf("bcd.MustNewAmountMinor: %v", err))
 	}
 	return c
 }
 
-// ParseCurrency parses a formatted currency string.
-func ParseCurrency(s string) (*Currency, error) {
+// ParseAmount parses a formatted currency string.
+func ParseAmount(s string) (*Amount, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, ErrInvalidAmount
@@ -383,41 +383,41 @@ func ParseCurrency(s string) (*Currency, error) {
 	}
 
 	// Create currency with identified code
-	return NewCurrency(amount, identifiedCode)
+	return NewAmount(amount, identifiedCode)
 }
 
 // Amount returns the BCD amount.
-func (c *Currency) Amount() *BCD {
+func (c *Amount) Amount() *BCD {
 	return c.amount.Copy()
 }
 
 // Code returns the ISO 4217 currency code.
-func (c *Currency) Code() string {
+func (c *Amount) Code() string {
 	return c.info.Code
 }
 
 // Symbol returns the currency symbol.
-func (c *Currency) Symbol() string {
+func (c *Amount) Symbol() string {
 	return c.info.Symbol
 }
 
 // Name returns the currency name.
-func (c *Currency) Name() string {
+func (c *Amount) Name() string {
 	return c.info.Name
 }
 
 // DecimalPlaces returns the number of decimal places for the currency.
-func (c *Currency) DecimalPlaces() int {
+func (c *Amount) DecimalPlaces() int {
 	return c.info.DecimalPlaces
 }
 
 // String returns the default string representation with symbol.
-func (c *Currency) String() string {
+func (c *Amount) String() string {
 	return c.Format(true, false)
 }
 
 // Format formats the currency with various options.
-func Format(c *Currency, includeSymbol, includeCode bool) string {
+func Format(c *Amount, includeSymbol, includeCode bool) string {
 	var sb strings.Builder
 
 	// Handle negative amounts
@@ -468,12 +468,12 @@ func Format(c *Currency, includeSymbol, includeCode bool) string {
 }
 
 // Format formats the currency with various options.
-func (c *Currency) Format(includeSymbol, includeCode bool) string {
+func (c *Amount) Format(includeSymbol, includeCode bool) string {
 	return Format(c, includeSymbol, includeCode)
 }
 
-// FormatWithSeparators formats the currency with thousand separators.
-func (c *Currency) FormatWithSeparators(separator string, includeSymbol, includeCode bool) string {
+// FormatWithSeparators formats the currency with custom separators.
+func (c *Amount) FormatWithSeparators(separator string, includeSymbol, includeCode bool) string {
 	var sb strings.Builder
 
 	// Handle negative amounts
@@ -542,7 +542,7 @@ func (c *Currency) FormatWithSeparators(separator string, includeSymbol, include
 }
 
 // ToMinorUnits converts the currency to its minor units (e.g., cents).
-func (c *Currency) ToMinorUnits() (int64, error) {
+func (c *Amount) ToMinorUnits() (int64, error) {
 	if c.info.DecimalPlaces == 0 {
 		return c.amount.ToInt64()
 	}
@@ -559,49 +559,49 @@ func (c *Currency) ToMinorUnits() (int64, error) {
 
 // Arithmetic operations
 
-// Add adds two currency amounts of the same currency.
-func (c *Currency) Add(other *Currency) (*Currency, error) {
+// Add adds two currency values of the same currency.
+func (c *Amount) Add(other *Amount) (*Amount, error) {
 	if c.info.Code != other.info.Code {
 		return nil, fmt.Errorf("%w: %s != %s", ErrCurrencyMismatch, c.info.Code, other.info.Code)
 	}
 
-	return &Currency{
+	return &Amount{
 		amount: c.amount.Add(other.amount),
 		info:   c.info,
 	}, nil
 }
 
 // Sub subtracts two currency amounts of the same currency.
-func (c *Currency) Sub(other *Currency) (*Currency, error) {
+func (c *Amount) Sub(other *Amount) (*Amount, error) {
 	if c.info.Code != other.info.Code {
 		return nil, fmt.Errorf("%w: %s != %s", ErrCurrencyMismatch, c.info.Code, other.info.Code)
 	}
 
-	return &Currency{
+	return &Amount{
 		amount: c.amount.Sub(other.amount),
 		info:   c.info,
 	}, nil
 }
 
 // Mul multiplies currency by a BCD factor.
-func (c *Currency) Mul(factor *BCD) *Currency {
+func (c *Amount) Mul(factor *BCD) *Amount {
 	result := c.amount.Mul(factor)
 	// Round to currency's decimal places
 	result = result.Round(c.info.DecimalPlaces, RoundHalfEven)
 
-	return &Currency{
+	return &Amount{
 		amount: result,
 		info:   c.info,
 	}
 }
 
-// MulInt64 multiplies currency by an integer.
-func (c *Currency) MulInt64(n int64) *Currency {
+// MulInt64 multiplies the currency by an integer.
+func (c *Amount) MulInt64(n int64) *Amount {
 	return c.Mul(fromInt64(n))
 }
 
 // MulFloat64 multiplies currency by a float.
-func (c *Currency) MulFloat64(f float64) (*Currency, error) {
+func (c *Amount) MulFloat64(f float64) (*Amount, error) {
 	factor, err := New(f, WithScale(4)) // Use 4 decimal places for factors
 	if err != nil {
 		return nil, err
@@ -610,7 +610,7 @@ func (c *Currency) MulFloat64(f float64) (*Currency, error) {
 }
 
 // Div divides currency by a BCD divisor.
-func (c *Currency) Div(divisor *BCD) (*Currency, error) {
+func (c *Amount) Div(divisor *BCD) (*Amount, error) {
 	if divisor.IsZero() {
 		return nil, ErrDivisionByZero
 	}
@@ -624,19 +624,19 @@ func (c *Currency) Div(divisor *BCD) (*Currency, error) {
 	// Round to currency's decimal places
 	result = result.Round(c.info.DecimalPlaces, RoundHalfEven)
 
-	return &Currency{
+	return &Amount{
 		amount: result,
 		info:   c.info,
 	}, nil
 }
 
-// DivInt64 divides currency by an integer.
-func (c *Currency) DivInt64(n int64) (*Currency, error) {
+// DivInt64 divides the currency by an integer.
+func (c *Amount) DivInt64(n int64) (*Amount, error) {
 	return c.Div(fromInt64(n))
 }
 
 // DivFloat64 divides currency by a float.
-func (c *Currency) DivFloat64(f float64) (*Currency, error) {
+func (c *Amount) DivFloat64(f float64) (*Amount, error) {
 	divisor, err := New(f, WithScale(4))
 	if err != nil {
 		return nil, err
@@ -646,7 +646,7 @@ func (c *Currency) DivFloat64(f float64) (*Currency, error) {
 
 // Allocate distributes the currency amount according to the given ratios.
 // The sum of the allocated amounts equals the original amount (no pennies lost).
-func (c *Currency) Allocate(ratios []int) ([]*Currency, error) {
+func (c *Amount) Allocate(ratios []int) ([]*Amount, error) {
 	if len(ratios) == 0 {
 		return nil, fmt.Errorf("%w: no ratios provided", ErrInvalidAmount)
 	}
@@ -714,9 +714,9 @@ func (c *Currency) Allocate(ratios []int) ([]*Currency, error) {
 	}
 
 	// Convert back to currency
-	result := make([]*Currency, len(allocated))
+	result := make([]*Amount, len(allocated))
 	for i, minorAmount := range allocated {
-		result[i], err = NewCurrencyMinor(minorAmount, c.info.Code)
+		result[i], err = NewAmountMinor(minorAmount, c.info.Code)
 		if err != nil {
 			return nil, err
 		}
@@ -726,7 +726,7 @@ func (c *Currency) Allocate(ratios []int) ([]*Currency, error) {
 }
 
 // Split divides the currency amount evenly among n parts.
-func (c *Currency) Split(n int) ([]*Currency, error) {
+func (c *Amount) Split(n int) ([]*Amount, error) {
 	if n <= 0 {
 		return nil, fmt.Errorf("%w: invalid split count", ErrInvalidAmount)
 	}
@@ -742,50 +742,49 @@ func (c *Currency) Split(n int) ([]*Currency, error) {
 
 // Comparison operations
 
-// IsZero returns true if the amount is zero.
-func (c *Currency) IsZero() bool {
+// IsZero returns true if the currency amount is zero.
+func (c *Amount) IsZero() bool {
 	return c.amount.IsZero()
 }
 
-// IsNegative returns true if the amount is negative.
-func (c *Currency) IsNegative() bool {
+// IsNegative returns true if the currency amount is negative.
+func (c *Amount) IsNegative() bool {
 	return c.amount.IsNegative()
 }
 
-// IsPositive returns true if the amount is positive.
-func (c *Currency) IsPositive() bool {
+// IsPositive returns true if the currency amount is positive.
+func (c *Amount) IsPositive() bool {
 	return c.amount.IsPositive()
 }
 
 // Abs returns the absolute value of the currency.
-func (c *Currency) Abs() *Currency {
-	return &Currency{
+func (c *Amount) Abs() *Amount {
+	return &Amount{
 		amount: c.amount.Abs(),
 		info:   c.info,
 	}
 }
 
 // Neg returns the negation of the currency.
-func (c *Currency) Neg() *Currency {
-	return &Currency{
+func (c *Amount) Neg() *Amount {
+	return &Amount{
 		amount: c.amount.Neg(),
 		info:   c.info,
 	}
 }
 
-// Cmp compares two currency amounts.
+// Cmp compares two currency values.
 // Returns -1 if c < other, 0 if c == other, 1 if c > other.
-// Returns an error if currencies don't match.
-func (c *Currency) Cmp(other *Currency) (int, error) {
+func (c *Amount) Cmp(other *Amount) (int, error) {
 	if c.info.Code != other.info.Code {
 		return 0, fmt.Errorf("%w: %s != %s", ErrCurrencyMismatch, c.info.Code, other.info.Code)
 	}
 	return c.amount.Cmp(other.amount), nil
 }
 
-// Equal returns true if the amounts are equal.
+// Equal returns true if both currency amounts are equal.
 // Returns false if currencies don't match.
-func (c *Currency) Equal(other *Currency) bool {
+func (c *Amount) Equal(other *Amount) bool {
 	if c.info.Code != other.info.Code {
 		return false
 	}

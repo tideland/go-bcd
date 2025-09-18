@@ -14,7 +14,7 @@
 // The bcd package offers two main types:
 //
 //   - BCD: A general-purpose decimal number type with arbitrary precision
-//   - Currency: A specialized type for monetary values with currency-specific formatting
+//   - Amount: A specialized type for monetary values with currency-specific formatting
 //
 // Both types guarantee exact decimal arithmetic without the rounding errors
 // inherent in binary floating-point representations.
@@ -83,59 +83,59 @@
 // Banker's rounding (RoundHalfEven) is particularly useful for financial
 // applications as it minimizes cumulative rounding bias.
 //
-// # Currency Type
+// # Amount Type
 //
-// The Currency type combines BCD arithmetic with currency-specific features:
+// The Amount type combines BCD arithmetic with currency-specific features:
 //
 //	// Create currency amounts from any numeric type
-//	price, _ := bcd.NewCurrency("19.99", "USD")      // from string
-//	tax, _ := bcd.NewCurrency(1.60, "USD")           // from float
+//	price, _ := bcd.NewAmount("19.99", "USD")      // from string
+//	tax, _ := bcd.NewAmount(1.60, "USD")           // from float
 //	total, _ := price.Add(tax)  // $21.59
 //
 //	// From minor units (cents, pence, etc.)
-//	amount, _ := bcd.NewCurrencyMinor(12345, "USD")  // 12345 cents = $123.45
-//	amount2, _ := bcd.NewCurrencyMinor(int32(9999), "USD")  // works with any integer type
+//	amount, _ := bcd.NewAmountMinor(12345, "USD")  // 12345 cents = $123.45
+//	amount2, _ := bcd.NewAmountMinor(int32(9999), "USD")  // works with any integer type
 //
 //	// Must variant for constants
-//	baseFee := bcd.MustNewCurrency("5.00", "USD")
+//	amount := bcd.MustNewAmount("100.00", "USD")
 //
 //	// Parse formatted strings
-//	c1, _ := bcd.ParseCurrency("$1,234.56")    // US format
-//	c2, _ := bcd.ParseCurrency("€1.234,56")    // European format
-//	c3, _ := bcd.ParseCurrency("CHF 2'500.00") // Swiss format
-//	c4, _ := bcd.ParseCurrency("($50.00)")     // Negative (accounting)
+//	c1, _ := bcd.ParseAmount("$1,234.56")    // US format
+//	c2, _ := bcd.ParseAmount("€1.234,56")    // European format
+//	c3, _ := bcd.ParseAmount("CHF 2'500.00") // Swiss format
+//	c4, _ := bcd.ParseAmount("($50.00)")     // Negative (accounting)
 //
-// # Currency Operations
+// # Amount Operations
 //
-// Currency arithmetic ensures type safety and prevents mixing currencies:
+// Amount arithmetic ensures type safety and prevents mixing currencies:
 //
-//	usd1, _ := bcd.NewCurrency("100.00", "USD")
-//	usd2, _ := bcd.NewCurrency("50.00", "USD")
-//	eur, _ := bcd.NewCurrency("100.00", "EUR")
+//	usd1, _ := bcd.NewAmount("100.00", "USD")
+//	usd2, _ := bcd.NewAmount("50.00", "USD")
+//	eur1, _ := bcd.NewAmount("100.00", "EUR")
 //
 //	// Same currency operations
 //	sum, _ := usd1.Add(usd2)     // OK: $150.00
 //	diff, _ := usd1.Sub(usd2)    // OK: $50.00
 //
 //	// Different currencies
-//	_, err := usd1.Add(eur)      // Error: currency mismatch
+//	_, err := usd1.Add(eur1)     // Error: currency mismatch
 //
 //	// Multiplication/division with scalars
 //	double := usd1.MulInt64(2)   // $200.00
 //	half, _ := usd1.DivInt64(2)  // $50.00
 //
-// # Currency Allocation
+// # Amount Allocation
 //
 // The package provides methods to split monetary amounts without losing pennies:
 //
 //	// Split evenly
-//	bill, _ := bcd.NewCurrency("100.00", "USD")
+//	bill, _ := bcd.NewAmount("100.00", "USD")
 //	shares, _ := bill.Split(3)
 //	// Results: [$33.34, $33.33, $33.33]
 //	// Total: $100.00 (exact!)
 //
 //	// Allocate by ratios
-//	budget, _ := bcd.NewCurrency("1000.00", "USD")
+//	budget, _ := bcd.NewAmount("1000.00", "USD")
 //	allocated, _ := budget.Allocate([]int{3, 2, 5})  // 30%, 20%, 50%
 //	// Results: [$300.00, $200.00, $500.00]
 //
@@ -152,7 +152,7 @@
 //
 // # Comparison Operations
 //
-// Both BCD and Currency types support comparison operations:
+// Both BCD and Amount types support comparison operations:
 //
 //	a, _ := bcd.New("10.50")
 //	b, _ := bcd.New("10.50")
@@ -188,7 +188,7 @@
 //
 // # Thread Safety
 //
-// BCD and Currency values are immutable. All operations return new instances
+// BCD and Amount values are immutable. All operations return new instances
 // rather than modifying existing values, making them safe for concurrent use.
 // However, the types themselves are not safe for concurrent modification, so
 // any shared mutable references should be protected with appropriate synchronization.
@@ -209,7 +209,7 @@
 //	 3. Choose appropriate rounding modes for your use case. Financial applications
 //	    often use RoundHalfEven (banker's rounding) to minimize bias.
 //
-//	 4. When working with currencies, use the Currency type rather than plain BCD
+//	 4. When working with currencies, use the Amount type rather than plain BCD
 //	    to ensure proper formatting and decimal places.
 //
 //	 5. For performance-critical code, minimize conversions between BCD and other

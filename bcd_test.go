@@ -350,8 +350,8 @@ func TestBCDConversion(t *testing.T) {
 	})
 }
 
-func TestCurrency(t *testing.T) {
-	t.Run("NewCurrency", func(t *testing.T) {
+func TestAmount(t *testing.T) {
+	t.Run("NewAmount", func(t *testing.T) {
 		tests := []struct {
 			amount string
 			code   string
@@ -366,7 +366,7 @@ func TestCurrency(t *testing.T) {
 		}
 
 		for _, tt := range tests {
-			curr, err := NewCurrency(tt.amount, tt.code)
+			curr, err := NewAmount(tt.amount, tt.code)
 			if tt.err {
 				verify.ErrorMatch(t, err, ".*")
 			} else {
@@ -376,8 +376,8 @@ func TestCurrency(t *testing.T) {
 		}
 	})
 
-	t.Run("CurrencyAllocation", func(t *testing.T) {
-		total, _ := NewCurrency("100", "USD")
+	t.Run("AmountAllocation", func(t *testing.T) {
+		total, _ := NewAmount("100", "USD")
 
 		// Split evenly
 		parts, err := total.Split(3)
@@ -404,10 +404,10 @@ func TestCurrency(t *testing.T) {
 		verify.Equal(t, parts[2].String(), "$40.00")
 	})
 
-	t.Run("CurrencyArithmetic", func(t *testing.T) {
-		usd100, _ := NewCurrency("100", "USD")
-		usd50, _ := NewCurrency("50", "USD")
-		eur100, _ := NewCurrency("100", "EUR")
+	t.Run("AmountArithmetic", func(t *testing.T) {
+		usd100, _ := NewAmount("100", "USD")
+		usd50, _ := NewAmount("50", "USD")
+		eur100, _ := NewAmount("100", "EUR")
 
 		// Add same currency
 		sum, err := usd100.Add(usd50)
@@ -428,7 +428,7 @@ func TestCurrency(t *testing.T) {
 		verify.Equal(t, half.String(), "$50.00")
 	})
 
-	t.Run("ParseCurrency", func(t *testing.T) {
+	t.Run("ParseAmount", func(t *testing.T) {
 		tests := []struct {
 			input string
 			want  string
@@ -443,7 +443,7 @@ func TestCurrency(t *testing.T) {
 		}
 
 		for _, tt := range tests {
-			curr, err := ParseCurrency(tt.input)
+			curr, err := ParseAmount(tt.input)
 			verify.NoError(t, err)
 			verify.Equal(t, curr.String(), tt.want)
 			verify.Equal(t, curr.Code(), tt.code)

@@ -72,11 +72,11 @@ func ExampleBCD_precision() {
 }
 
 // ExampleCurrency_basic demonstrates basic currency operations with generic API.
-func ExampleCurrency_basic() {
+func ExampleAmount_basic() {
 	// Create currency amounts using generic API
-	price, _ := bcd.NewCurrency("19.99", "USD") // from string
-	tax, _ := bcd.NewCurrency(1.60, "USD")      // from float
-	shipping := bcd.MustNewCurrency(5, "USD")   // from int
+	price, _ := bcd.NewAmount("19.99", "USD") // from string
+	tax, _ := bcd.NewAmount(1.60, "USD")      // from float
+	shipping := bcd.MustNewAmount(5, "USD")   // from int
 
 	// Calculate total
 	subtotal, _ := price.Add(tax)
@@ -103,11 +103,11 @@ func ExampleCurrency_basic() {
 }
 
 // ExampleCurrency_calculations demonstrates currency calculations with generic API.
-func ExampleCurrency_calculations() {
+func ExampleAmount_calculations() {
 	// Shopping cart example using generic API
-	item1 := bcd.MustNewCurrency("29.99", "USD") // from string
-	item2 := bcd.MustNewCurrency(45.50, "USD")   // from float
-	item3 := bcd.MustNewCurrency(12.99, "USD")   // from float
+	item1 := bcd.MustNewAmount("29.99", "USD") // from string
+	item2 := bcd.MustNewAmount(45.50, "USD")   // from float
+	item3 := bcd.MustNewAmount(12.99, "USD")   // from float
 
 	// Calculate subtotal
 	subtotal, _ := item1.Add(item2)
@@ -138,9 +138,9 @@ func ExampleCurrency_calculations() {
 }
 
 // ExampleCurrency_allocation demonstrates splitting amounts without losing pennies.
-func ExampleCurrency_allocation() {
+func ExampleAmount_allocation() {
 	// Split a bill among friends using generic API
-	bill := bcd.MustNewCurrency(100, "USD") // from int
+	bill := bcd.MustNewAmount(100, "USD") // from int
 
 	// Split evenly among 3 people
 	shares, _ := bill.Split(3)
@@ -157,7 +157,7 @@ func ExampleCurrency_allocation() {
 	fmt.Printf("  Total: $%s (no pennies lost!)\n", total.Normalize())
 
 	// Allocate by ratios (e.g., splitting rent by room size)
-	rent := bcd.MustNewCurrency(2000.00, "USD") // from float
+	rent := bcd.MustNewAmount(2000.00, "USD") // from float
 	// Room sizes: 100, 150, 250 sq ft
 	roomShares, _ := rent.Allocate([]int{100, 150, 250})
 	fmt.Println("\nSplitting $2000 rent by room size:")
@@ -180,7 +180,7 @@ func ExampleCurrency_allocation() {
 }
 
 // ExampleParseCurrency demonstrates parsing formatted currency strings.
-func ExampleParseCurrency() {
+func ExampleParseAmount() {
 	inputs := []string{
 		"$1,234.56",
 		"€1.234,56",
@@ -191,12 +191,12 @@ func ExampleParseCurrency() {
 	}
 
 	for _, input := range inputs {
-		curr, err := bcd.ParseCurrency(input)
+		amount, err := bcd.ParseAmount(input)
 		if err != nil {
 			fmt.Printf("Error parsing %q: %v\n", input, err)
 			continue
 		}
-		fmt.Printf("%-15s -> %s (%s)\n", input, curr, curr.Code())
+		fmt.Printf("%-15s -> %s (%s)\n", input, amount, amount.Code())
 	}
 
 	// Output:
@@ -209,12 +209,12 @@ func ExampleParseCurrency() {
 }
 
 // ExampleCurrency_internationalPrices demonstrates handling multiple currencies with generic API.
-func ExampleCurrency_internationalPrices() {
+func ExampleAmount_internationalPrices() {
 	// Product prices in different markets using generic API
-	priceUS := bcd.MustNewCurrency("99.99", "USD") // from string
-	priceEU := bcd.MustNewCurrency(89.99, "EUR")   // from float
-	priceUK := bcd.MustNewCurrency(79.99, "GBP")   // from float
-	priceJP := bcd.MustNewCurrency(10000, "JPY")   // from int (no decimals)
+	priceUS := bcd.MustNewAmount("99.99", "USD") // from string
+	priceEU := bcd.MustNewAmount(89.99, "EUR")   // from float
+	priceUK := bcd.MustNewAmount(79.99, "GBP")   // from float
+	priceJP := bcd.MustNewAmount(10000, "JPY")   // from int (no decimals)
 
 	fmt.Println("International Pricing:")
 	fmt.Printf("  US: %s\n", priceUS.Format(true, true))
@@ -222,7 +222,7 @@ func ExampleCurrency_internationalPrices() {
 	fmt.Printf("  UK: %s\n", priceUK.Format(true, true))
 	fmt.Printf("  JP: %s\n", priceJP.Format(true, true))
 
-	// Note: Currency conversion would require exchange rates
+	// Note: Amount conversion would require exchange rates
 	// This package focuses on accurate arithmetic within a single currency
 
 	// Output:
@@ -283,24 +283,24 @@ func ExampleBCD_rounding() {
 }
 
 // ExampleCurrency_minorUnits demonstrates working with minor units (cents, pence, etc).
-func ExampleCurrency_minorUnits() {
+func ExampleAmount_minorUnits() {
 	// Create from minor units using generic API
 	cents := int64(12345)
-	amount := bcd.MustNewCurrencyMinor(cents, "USD")
+	amount := bcd.MustNewAmountMinor(cents, "USD")
 	fmt.Printf("%d cents = %s\n", cents, amount)
 
 	// Works with any integer type
 	pennies := uint32(9999)
-	amount2 := bcd.MustNewCurrencyMinor(pennies, "GBP")
+	amount2 := bcd.MustNewAmountMinor(pennies, "GBP")
 	fmt.Printf("%d pence = %s\n", pennies, amount2)
 
 	// Convert to minor units
-	price := bcd.MustNewCurrency("99.99", "USD")
+	price := bcd.MustNewAmount("99.99", "USD")
 	minorUnits, _ := price.ToMinorUnits()
 	fmt.Printf("%s = %d cents\n", price, minorUnits)
 
 	// Japanese Yen has no minor units
-	yen := bcd.MustNewCurrency(1234, "JPY") // from int
+	yen := bcd.MustNewAmount(1234, "JPY") // from int
 	yenUnits, _ := yen.ToMinorUnits()
 	fmt.Printf("%s = %d yen\n", yen, yenUnits)
 
@@ -312,25 +312,25 @@ func ExampleCurrency_minorUnits() {
 }
 
 // ExampleCurrency_invoice demonstrates a complete invoice calculation with generic API.
-func ExampleCurrency_invoice() {
+func ExampleAmount_invoice() {
 	// Line items using generic API
 	type LineItem struct {
 		Description string
 		Quantity    int64
-		UnitPrice   *bcd.Currency
+		UnitPrice   *bcd.Amount
 	}
 
 	items := []LineItem{
-		{"Widget Pro", 5, bcd.MustNewCurrency("49.99", "USD")}, // from string
-		{"Gadget Plus", 2, bcd.MustNewCurrency(129.95, "USD")}, // from float
-		{"Service Fee", 1, bcd.MustNewCurrency(25, "USD")},     // from int
+		{"Widget Pro", 5, bcd.MustNewAmount("49.99", "USD")}, // from string
+		{"Gadget Plus", 2, bcd.MustNewAmount(129.95, "USD")}, // from float
+		{"Service Fee", 1, bcd.MustNewAmount(25, "USD")},     // from int
 	}
 
 	// Calculate line totals
 	fmt.Println("Invoice:")
 	fmt.Println(repeatString("-", 50))
 
-	var subtotal *bcd.Currency
+	var subtotal *bcd.Amount
 	for _, item := range items {
 		lineTotal := item.UnitPrice.MulInt64(item.Quantity)
 		fmt.Printf("%-20s %2d x %8s = %8s\n",
